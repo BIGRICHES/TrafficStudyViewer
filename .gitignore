@@ -1,9 +1,9 @@
 # Ignore everything
 *
 
-# Except webapp folder
-!webapp/
-!webapp/**
+# Except docs folder (for GitHub Pages)
+!docs/
+!docs/**
 
 # And .gitignore itself
 !.gitignore
