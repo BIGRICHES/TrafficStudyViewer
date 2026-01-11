@@ -85,7 +85,8 @@ export function aggregateDaily(data) {
             agg.peak_speed = Math.max(agg.peak_speed, row.peak_speed);
         }
 
-        if (row.p85) {
+        // Collect p85 if directly available, otherwise use avg_speed for estimation
+        if (row.p85 && row.p85 > 0) {
             agg.p85_values.push(row.p85);
         }
     }
@@ -93,6 +94,15 @@ export function aggregateDaily(data) {
     // Calculate derived values
     const results = [];
     for (const agg of grouped.values()) {
+        // Calculate p85: use direct values if available, otherwise estimate from avg_speed distribution
+        let p85Value = null;
+        if (agg.p85_values.length > 0) {
+            p85Value = average(agg.p85_values);
+        } else if (agg.speeds.length > 0) {
+            // Estimate 85th percentile from interval average speeds
+            p85Value = calculate85thPercentile(agg.speeds);
+        }
+
         results.push({
             date: agg.date,
             label: agg.label,
@@ -102,7 +112,7 @@ export function aggregateDaily(data) {
             pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : 0,
             avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : 0,
             peak_speed: agg.peak_speed,
-            p85: agg.p85_values.length > 0 ? average(agg.p85_values) : null
+            p85: p85Value
         });
     }
 
@@ -138,6 +148,7 @@ export function aggregateHourly(data) {
                 sum_speeds: 0,
                 peak_speed: 0,
                 count: 0,
+                speeds: [],
                 p85_values: []
             });
         }
@@ -149,13 +160,14 @@ export function aggregateHourly(data) {
 
         if (row.avg_speed) {
             agg.sum_speeds += (row.avg_speed * (row.vehicles || 1));
+            agg.speeds.push(row.avg_speed);
         }
 
         if (row.peak_speed) {
             agg.peak_speed = Math.max(agg.peak_speed, row.peak_speed);
         }
 
-        if (row.p85) {
+        if (row.p85 && row.p85 > 0) {
             agg.p85_values.push(row.p85);
         }
     }
@@ -167,6 +179,14 @@ export function aggregateHourly(data) {
     for (const key of sortedKeys) {
         const agg = grouped.get(key);
 
+        // Calculate p85: use direct values if available, otherwise estimate from avg_speed
+        let p85Value = null;
+        if (agg.p85_values.length > 0) {
+            p85Value = average(agg.p85_values);
+        } else if (agg.speeds.length > 0) {
+            p85Value = calculate85thPercentile(agg.speeds);
+        }
+
         results.push({
             datetime: agg.datetime,
             label: agg.label,
@@ -176,7 +196,7 @@ export function aggregateHourly(data) {
             pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : 0,
             avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : 0,
             peak_speed: agg.peak_speed,
-            p85: agg.p85_values.length > 0 ? average(agg.p85_values) : null
+            p85: p85Value
         });
     }
 
@@ -205,6 +225,7 @@ export function calculateStats(data, perVehicleData = null) {
     let sumSpeeds = 0;
     let speedCount = 0;
     const p85Values = [];
+    const avgSpeeds = [];
 
     for (const row of data) {
         stats.totalVehicles += row.vehicles || 0;
@@ -213,13 +234,14 @@ export function calculateStats(data, perVehicleData = null) {
         if (row.avg_speed) {
             sumSpeeds += row.avg_speed * (row.vehicles || 1);
             speedCount += row.vehicles || 1;
+            avgSpeeds.push(row.avg_speed);
         }
 
         if (row.peak_speed) {
             stats.peakSpeed = Math.max(stats.peakSpeed, row.peak_speed);
         }
 
-        if (row.p85) {
+        if (row.p85 && row.p85 > 0) {
             p85Values.push(row.p85);
         }
     }
@@ -233,14 +255,17 @@ export function calculateStats(data, perVehicleData = null) {
         stats.avgSpeed = sumSpeeds / speedCount;
     }
 
-    // 85th percentile
+    // 85th percentile - try multiple sources
     if (perVehicleData && perVehicleData.length > 0) {
-        // Calculate from per-vehicle speeds
+        // Best: Calculate from per-vehicle speeds
         const speeds = perVehicleData.map(v => v.speed).filter(s => s > 0);
         stats.p85 = calculate85thPercentile(speeds);
     } else if (p85Values.length > 0) {
-        // Use pre-calculated values from clean data
+        // Good: Use pre-calculated values from clean data
         stats.p85 = average(p85Values);
+    } else if (avgSpeeds.length > 0) {
+        // Fallback: Estimate from interval average speeds
+        stats.p85 = calculate85thPercentile(avgSpeeds);
     }
 
     return stats;
@@ -448,6 +473,7 @@ export function calculateReportStatistics(data) {
     let sumSpeeds = 0;
     let speedCount = 0;
     const p85Values = [];
+    const avgSpeeds = [];
 
     for (const row of data) {
         totalVehicles += row.vehicles || 0;
@@ -456,11 +482,20 @@ export function calculateReportStatistics(data) {
         if (row.avg_speed) {
             sumSpeeds += row.avg_speed * (row.vehicles || 1);
             speedCount += row.vehicles || 1;
+            avgSpeeds.push(row.avg_speed);
         }
 
-        if (row.p85) {
+        if (row.p85 && row.p85 > 0) {
             p85Values.push(row.p85);
         }
+    }
+
+    // Calculate p85 - prefer direct values, fallback to estimation
+    let p85Speed = null;
+    if (p85Values.length > 0) {
+        p85Speed = average(p85Values);
+    } else if (avgSpeeds.length > 0) {
+        p85Speed = calculate85thPercentile(avgSpeeds);
     }
 
     return {
@@ -468,6 +503,6 @@ export function calculateReportStatistics(data) {
         totalViolators,
         violationRate: totalVehicles > 0 ? (totalViolators / totalVehicles) * 100 : 0,
         avgSpeed: speedCount > 0 ? sumSpeeds / speedCount : 0,
-        p85Speed: p85Values.length > 0 ? average(p85Values) : null
+        p85Speed
     };
 }

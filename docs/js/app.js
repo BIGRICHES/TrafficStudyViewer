@@ -1515,7 +1515,7 @@ async function generateReport() {
             }
         }
 
-        let chartY = chartsPerPage === 1 ? 38 : 36;
+        let chartY = chartsPerPage === 1 ? 45 : 42;
         let chartsOnPage = 0;
 
         // Draw header on first page
