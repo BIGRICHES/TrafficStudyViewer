@@ -1,0 +1,1992 @@
+/**
+ * Main application entry point
+ */
+
+import * as fileSystem from './services/fileSystem.js';
+import * as storage from './services/storage.js';
+import * as studyIndex from './services/studyIndex.js';
+import { createChart, destroyChart, updateChartTheme } from './charts/chartFactory.js';
+import { calculateStats, formatNumber, formatDecimal, calculateReportStatistics, aggregateDaily, aggregateHourly } from './utils/stats.js';
+import { renderSpeedSummaryTable, renderVolumeSummaryTable, renderDailySpeedBinsTable } from './tables/tableRenderer.js';
+import { formatDateRange, formatDate } from './utils/dateUtils.js';
+import { MARKER_COLORS, MAP_CENTER, VOLUME_STUDY_TYPES, DATA_TABLE_TYPES, CHART_COLORS } from './config.js';
+
+// ============ Utilities ============
+
+// Debounce function - must be defined early as it's used in setupEventListeners
+function debounce(fn, delay) {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn(...args), delay);
+    };
+}
+
+// ============ State ============
+let currentStudy = null;
+let currentStudyData = null;
+let filteredStudyData = null;
+let map = null;
+let markersLayer = null;
+let studyMarkers = new Map(); // Map study_id to marker for zooming
+let isDarkTheme = false;
+let expandedGroups = new Set();
+
+// ============ DOM Elements ============
+const elements = {
+    // Screens
+    folderScreen: document.getElementById('folder-screen'),
+    appScreen: document.getElementById('app-screen'),
+    browserWarning: document.getElementById('browser-warning'),
+    loadingOverlay: document.getElementById('loading-overlay'),
+    loadingMessage: document.getElementById('loading-message'),
+
+    // Folder picker
+    selectFolderBtn: document.getElementById('select-folder-btn'),
+    changeFolderBtn: document.getElementById('change-folder-btn'),
+    folderStatus: document.getElementById('folder-status'),
+
+    // Header
+    themeToggleBtn: document.getElementById('theme-toggle-btn'),
+
+    // Sidebar
+    searchInput: document.getElementById('search-input'),
+    filterType: document.getElementById('filter-type'),
+    filterDirection: document.getElementById('filter-direction'),
+    studyList: document.getElementById('study-list'),
+    studyCount: document.getElementById('study-count'),
+
+    // Tabs
+    tabs: document.querySelectorAll('.tab'),
+    tabPanes: document.querySelectorAll('.tab-pane'),
+
+    // Charts
+    chartPlaceholder: document.getElementById('chart-placeholder'),
+    chartContainer: document.getElementById('chart-container'),
+    chartCanvas: document.getElementById('main-chart'),
+    chartTypeSelect: document.getElementById('chart-type-select'),
+    timeAggSelect: document.getElementById('time-agg-select'),
+    showLabelsCheck: document.getElementById('show-labels-check'),
+    chartStartDate: document.getElementById('chart-start-date'),
+    chartEndDate: document.getElementById('chart-end-date'),
+
+    // Study info
+    studyTitle: document.getElementById('study-title'),
+    studyTypeBadge: document.getElementById('study-type-badge'),
+    studyDirection: document.getElementById('study-direction'),
+    studyDates: document.getElementById('study-dates'),
+    studySpeedLimit: document.getElementById('study-speed-limit'),
+
+    // Stats
+    statTotal: document.getElementById('stat-total'),
+    statViolators: document.getElementById('stat-violators'),
+    statPct: document.getElementById('stat-pct'),
+    statAvgSpeed: document.getElementById('stat-avg-speed'),
+    stat85th: document.getElementById('stat-85th'),
+    statPeak: document.getElementById('stat-peak'),
+
+    // Map
+    mapContainer: document.getElementById('map-container'),
+    mapFilterType: document.getElementById('map-filter-type'),
+    mapStudyCount: document.getElementById('map-study-count'),
+
+    // Reports - Advanced Builder
+    reportTitle: document.getElementById('report-title'),
+    addChartBtn: document.getElementById('add-chart-btn'),
+    reportItemsList: document.getElementById('report-items-list'),
+    reportChartsPerPage: document.getElementById('report-charts-per-page'),
+    pageCountDisplay: document.getElementById('page-count-display'),
+    generateReportBtn: document.getElementById('generate-report-btn'),
+    reportStatus: document.getElementById('report-status'),
+
+    // Chart Modal
+    chartModal: document.getElementById('chart-modal'),
+    chartModalTitle: document.getElementById('chart-modal-title'),
+    closeChartModal: document.getElementById('close-chart-modal'),
+    cancelChartModal: document.getElementById('cancel-chart-modal'),
+    saveChartModal: document.getElementById('save-chart-modal'),
+    chartStudySearch: document.getElementById('chart-study-search'),
+    chartStudyList: document.getElementById('chart-study-list'),
+    chartSelectedStudy: document.getElementById('chart-selected-study'),
+    chartModalType: document.getElementById('chart-modal-type'),
+    chartModalTimeAgg: document.getElementById('chart-modal-time-agg'),
+    chartModalFullRange: document.getElementById('chart-modal-full-range'),
+    chartModalDateRange: document.getElementById('chart-modal-date-range'),
+    chartModalStartDate: document.getElementById('chart-modal-start-date'),
+    chartModalEndDate: document.getElementById('chart-modal-end-date'),
+    chartModalTimeFilter: document.getElementById('chart-modal-time-filter'),
+    chartModalTimeRange: document.getElementById('chart-modal-time-range'),
+    chartModalTimeStart: document.getElementById('chart-modal-time-start'),
+    chartModalTimeEnd: document.getElementById('chart-modal-time-end'),
+    chartModalShowLabels: document.getElementById('chart-modal-show-labels'),
+    modalSelectWeekdays: document.getElementById('modal-select-weekdays'),
+    modalSelectWeekend: document.getElementById('modal-select-weekend'),
+    modalSelectAllDays: document.getElementById('modal-select-all-days'),
+    presetSchool: document.getElementById('preset-school'),
+    presetRushAm: document.getElementById('preset-rush-am'),
+    presetRushPm: document.getElementById('preset-rush-pm'),
+
+    // Data Table Modal
+    addTableBtn: document.getElementById('add-table-btn'),
+    tableModal: document.getElementById('table-modal'),
+    tableModalTitle: document.getElementById('table-modal-title'),
+    closeTableModal: document.getElementById('close-table-modal'),
+    cancelTableModal: document.getElementById('cancel-table-modal'),
+    saveTableModal: document.getElementById('save-table-modal'),
+    tableStudySearch: document.getElementById('table-study-search'),
+    tableStudyList: document.getElementById('table-study-list'),
+    tableSelectedStudy: document.getElementById('table-selected-study'),
+    tableModalType: document.getElementById('table-modal-type'),
+    tableModalStartDate: document.getElementById('table-modal-start-date'),
+    tableModalEndDate: document.getElementById('table-modal-end-date'),
+    tableFullRangeBtn: document.getElementById('table-full-range-btn'),
+    tablePageCount: document.getElementById('table-page-count')
+};
+
+// Report items state
+let reportItems = [];
+let editingItemIndex = -1;
+let modalSelectedStudyId = null;
+let modalSelectedStudyMeta = null;
+
+// Table modal state
+let tableModalSelectedStudyId = null;
+let tableModalSelectedStudyMeta = null;
+let editingTableItemIndex = -1;
+
+// ============ Initialization ============
+
+async function init() {
+    if (!fileSystem.isSupported()) {
+        elements.browserWarning.style.display = 'flex';
+        elements.folderScreen.style.display = 'none';
+        return;
+    }
+
+    const savedTheme = await storage.get('theme');
+    if (savedTheme === 'dark') {
+        setTheme(true);
+    }
+
+    setupEventListeners();
+
+    showLoading('Checking for saved folder...');
+    const hasHandle = await fileSystem.hasStoredHandle();
+
+    if (hasHandle) {
+        elements.folderStatus.textContent = 'Click to reconnect to your data folder';
+        elements.folderStatus.className = 'folder-status info';
+        elements.selectFolderBtn.textContent = 'Reconnect to Folder';
+    }
+
+    hideLoading();
+}
+
+function setupEventListeners() {
+    elements.selectFolderBtn.addEventListener('click', handleFolderSelect);
+    elements.changeFolderBtn.addEventListener('click', handleChangeFolder);
+    elements.themeToggleBtn.addEventListener('click', () => setTheme(!isDarkTheme));
+
+    elements.searchInput.addEventListener('input', debounce(updateStudyList, 300));
+    elements.filterType.addEventListener('change', updateStudyList);
+    elements.filterDirection.addEventListener('change', updateStudyList);
+
+    elements.tabs.forEach(tab => {
+        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    elements.chartTypeSelect.addEventListener('change', updateChart);
+    elements.timeAggSelect.addEventListener('change', updateChart);
+    elements.showLabelsCheck.addEventListener('change', updateChart);
+    elements.chartStartDate.addEventListener('change', handleDateRangeChange);
+    elements.chartEndDate.addEventListener('change', handleDateRangeChange);
+
+    elements.mapFilterType.addEventListener('change', updateMapMarkers);
+
+    // Report Builder
+    elements.addChartBtn.addEventListener('click', openAddChartModal);
+    elements.closeChartModal.addEventListener('click', closeChartModal);
+    elements.cancelChartModal.addEventListener('click', closeChartModal);
+    elements.saveChartModal.addEventListener('click', saveChartItem);
+    elements.generateReportBtn.addEventListener('click', generateReport);
+    elements.reportChartsPerPage.addEventListener('change', updatePageCount);
+
+    // Chart Modal interactions
+    elements.chartStudySearch.addEventListener('input', debounce(filterStudyDropdown, 200));
+    elements.chartStudySearch.addEventListener('focus', () => elements.chartStudyList.classList.add('show'));
+    elements.chartModalFullRange.addEventListener('change', toggleDateRange);
+    elements.chartModalTimeFilter.addEventListener('change', toggleTimeFilter);
+
+    // Modal day presets
+    elements.modalSelectWeekdays.addEventListener('click', () => setModalDayPreset('weekdays'));
+    elements.modalSelectWeekend.addEventListener('click', () => setModalDayPreset('weekend'));
+    elements.modalSelectAllDays.addEventListener('click', () => setModalDayPreset('all'));
+
+    // Time presets
+    elements.presetSchool.addEventListener('click', () => setTimePreset('07:00', '09:00'));
+    elements.presetRushAm.addEventListener('click', () => setTimePreset('06:30', '09:00'));
+    elements.presetRushPm.addEventListener('click', () => setTimePreset('16:00', '18:30'));
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.study-selector')) {
+            elements.chartStudyList.classList.remove('show');
+            if (elements.tableStudyList) {
+                elements.tableStudyList.classList.remove('show');
+            }
+        }
+    });
+
+    // Data Table Modal
+    if (elements.addTableBtn) {
+        elements.addTableBtn.addEventListener('click', openAddTableModal);
+    }
+    if (elements.closeTableModal) {
+        elements.closeTableModal.addEventListener('click', closeTableModal);
+    }
+    if (elements.cancelTableModal) {
+        elements.cancelTableModal.addEventListener('click', closeTableModal);
+    }
+    if (elements.saveTableModal) {
+        elements.saveTableModal.addEventListener('click', saveTableItem);
+    }
+    if (elements.tableStudySearch) {
+        elements.tableStudySearch.addEventListener('input', debounce(filterTableStudyDropdown, 200));
+        elements.tableStudySearch.addEventListener('focus', () => elements.tableStudyList.classList.add('show'));
+    }
+    if (elements.tableFullRangeBtn) {
+        elements.tableFullRangeBtn.addEventListener('click', setTableFullRange);
+    }
+    if (elements.tableModalStartDate) {
+        elements.tableModalStartDate.addEventListener('change', updateTablePageCount);
+    }
+    if (elements.tableModalEndDate) {
+        elements.tableModalEndDate.addEventListener('change', updateTablePageCount);
+    }
+    if (elements.tableModalType) {
+        elements.tableModalType.addEventListener('change', onTableTypeChange);
+    }
+}
+
+// ============ Folder Handling ============
+
+async function handleFolderSelect() {
+    showLoading('Selecting folder...');
+
+    try {
+        const hasHandle = await fileSystem.hasStoredHandle();
+        let handle;
+
+        if (hasHandle) {
+            handle = await fileSystem.restoreAccess(true);
+        }
+
+        if (!handle) {
+            handle = await fileSystem.requestFolderAccess();
+        }
+
+        if (!handle) {
+            hideLoading();
+            return;
+        }
+
+        await loadAndShowApp();
+
+    } catch (error) {
+        console.error('Error selecting folder:', error);
+        elements.folderStatus.textContent = `Error: ${error.message}`;
+        elements.folderStatus.className = 'folder-status error';
+        hideLoading();
+    }
+}
+
+async function handleChangeFolder() {
+    showLoading('Selecting new folder...');
+
+    try {
+        await fileSystem.clearStoredHandle();
+        const handle = await fileSystem.requestFolderAccess();
+
+        if (!handle) {
+            hideLoading();
+            return;
+        }
+
+        if (map) {
+            map.remove();
+            map = null;
+            markersLayer = null;
+            studyMarkers.clear();
+        }
+
+        await loadAndShowApp();
+
+    } catch (error) {
+        console.error('Error changing folder:', error);
+        alert(`Error: ${error.message}`);
+        hideLoading();
+    }
+}
+
+async function loadAndShowApp() {
+    showLoading('Validating folder structure...');
+    const validation = await fileSystem.validateFolder();
+
+    if (!validation.valid) {
+        elements.folderStatus.textContent = validation.message;
+        elements.folderStatus.className = 'folder-status error';
+        elements.folderScreen.style.display = 'flex';
+        elements.appScreen.style.display = 'none';
+        hideLoading();
+        return;
+    }
+
+    showLoading('Loading studies...');
+    await studyIndex.loadIndex();
+
+    elements.folderScreen.style.display = 'none';
+    elements.appScreen.style.display = 'flex';
+
+    updateStudyList();
+
+    // Initialize map immediately since it's the default tab
+    setTimeout(() => initMap(), 100);
+
+    hideLoading();
+}
+
+// ============ Study List with Grouped Linked Studies ============
+
+function updateStudyList() {
+    const query = elements.searchInput.value.toLowerCase().trim();
+    const filterType = elements.filterType.value;
+    const filterDirection = elements.filterDirection.value;
+
+    let studies = studyIndex.getAll();
+
+    if (query) {
+        studies = studies.filter(s => {
+            const location = (s.location || '').toLowerCase();
+            const counter = (s.counter_number || '').toLowerCase();
+            const id = (s.study_id || '').toLowerCase();
+            return location.includes(query) || counter.includes(query) || id.includes(query);
+        });
+    }
+    if (filterType) {
+        studies = studies.filter(s => s.study_type === filterType);
+    }
+    if (filterDirection) {
+        studies = studies.filter(s => s.direction === filterDirection);
+    }
+
+    elements.studyCount.textContent = studies.length;
+
+    if (studies.length === 0) {
+        elements.studyList.innerHTML = '<div class="loading">No studies found</div>';
+        return;
+    }
+
+    const linkGroups = new Map();
+    const unlinkedStudies = [];
+
+    studies.forEach(study => {
+        const linkGroup = study.link_group ? String(study.link_group).trim() : '';
+        if (linkGroup !== '') {
+            if (!linkGroups.has(linkGroup)) {
+                linkGroups.set(linkGroup, []);
+            }
+            linkGroups.get(linkGroup).push(study);
+        } else {
+            unlinkedStudies.push(study);
+        }
+    });
+
+    let html = '';
+
+    linkGroups.forEach((groupStudies, linkGroup) => {
+        if (groupStudies.length === 1) {
+            html += createStudyItem(groupStudies[0]);
+        } else {
+            html += createLinkedGroupItem(linkGroup, groupStudies);
+        }
+    });
+
+    unlinkedStudies.forEach(study => {
+        html += createStudyItem(study);
+    });
+
+    elements.studyList.innerHTML = html;
+
+    elements.studyList.querySelectorAll('.study-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectStudy(item.dataset.id);
+        });
+    });
+
+    elements.studyList.querySelectorAll('.linked-group-header').forEach(header => {
+        header.addEventListener('click', () => toggleGroup(header.dataset.group));
+    });
+}
+
+function createStudyItem(study) {
+    const typeClass = study.study_type.toLowerCase().replace(/\s+/g, '-');
+    const isSelected = currentStudy && currentStudy.study_id === study.study_id;
+
+    return `
+        <div class="study-item ${isSelected ? 'selected' : ''}" data-id="${study.study_id}">
+            <div class="study-item-title">${escapeHtml(study.location)}</div>
+            <div class="study-item-meta">
+                <span class="type-badge ${typeClass}">${study.study_type}</span>
+                ${study.direction ? `<span>${study.direction}</span>` : ''}
+                <span>${formatDateRange(study.start_datetime, study.end_datetime)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function createLinkedGroupItem(linkGroup, studies) {
+    const isExpanded = expandedGroups.has(linkGroup);
+    const firstStudy = studies[0];
+    const arrow = isExpanded ? '▼' : '▶';
+
+    let html = `
+        <div class="linked-group">
+            <div class="linked-group-header" data-group="${linkGroup}">
+                <span class="group-arrow">${arrow}</span>
+                <span class="group-icon">🔗</span>
+                <span class="group-title">${escapeHtml(firstStudy.location)}</span>
+                <span class="group-count">${studies.length}</span>
+            </div>
+            <div class="linked-group-items" style="display: ${isExpanded ? 'block' : 'none'}">
+    `;
+
+    studies.forEach(study => {
+        const typeClass = study.study_type.toLowerCase().replace(/\s+/g, '-');
+        const isSelected = currentStudy && currentStudy.study_id === study.study_id;
+
+        html += `
+            <div class="study-item linked-child ${isSelected ? 'selected' : ''}" data-id="${study.study_id}">
+                <div class="study-item-title">${study.direction || 'Unknown Direction'}</div>
+                <div class="study-item-meta">
+                    <span class="type-badge ${typeClass}">${study.study_type}</span>
+                    <span>${formatDateRange(study.start_datetime, study.end_datetime)}</span>
+                </div>
+            </div>
+        `;
+    });
+
+    html += '</div></div>';
+    return html;
+}
+
+function toggleGroup(linkGroup) {
+    if (expandedGroups.has(linkGroup)) {
+        expandedGroups.delete(linkGroup);
+    } else {
+        expandedGroups.add(linkGroup);
+    }
+    updateStudyList();
+}
+
+// ============ Study Selection ============
+
+async function selectStudy(studyId) {
+    showLoading('Loading study data...');
+
+    try {
+        currentStudy = studyIndex.getById(studyId);
+        if (!currentStudy) throw new Error('Study not found');
+
+        currentStudyData = await studyIndex.loadStudyData(studyId);
+        filteredStudyData = currentStudyData;
+
+        // Set date range inputs based on study data
+        setDateRangeFromData();
+
+        updateStudyInfo();
+        updateChartTypeOptions();
+        updateChart();
+        updateStats();
+
+        elements.chartPlaceholder.style.display = 'none';
+        elements.chartContainer.style.display = 'flex';
+        elements.generateReportBtn.disabled = false;
+
+        updateStudyList();
+        updateReportPanel();
+
+        // Zoom to study on map
+        zoomToStudy(studyId);
+
+        hideLoading();
+
+    } catch (error) {
+        console.error('Error loading study:', error);
+        alert(`Error loading study: ${error.message}`);
+        hideLoading();
+    }
+}
+
+function setDateRangeFromData() {
+    if (!currentStudyData || currentStudyData.length === 0) return;
+
+    const dates = currentStudyData
+        .map(d => d.datetime)
+        .filter(d => d)
+        .sort((a, b) => a - b);
+
+    if (dates.length > 0) {
+        const minDate = dates[0];
+        const maxDate = dates[dates.length - 1];
+
+        elements.chartStartDate.value = formatDateForInput(minDate);
+        elements.chartEndDate.value = formatDateForInput(maxDate);
+    }
+}
+
+function formatDateForInput(date) {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function handleDateRangeChange() {
+    if (!currentStudyData) return;
+
+    const startDate = elements.chartStartDate.value ? new Date(elements.chartStartDate.value + 'T00:00:00') : null;
+    const endDate = elements.chartEndDate.value ? new Date(elements.chartEndDate.value + 'T23:59:59') : null;
+
+    filteredStudyData = currentStudyData.filter(d => {
+        if (!d.datetime) return false;
+        const dt = new Date(d.datetime);
+        if (startDate && dt < startDate) return false;
+        if (endDate && dt > endDate) return false;
+        return true;
+    });
+
+    updateChart();
+    updateStats();
+}
+
+function updateStudyInfo() {
+    if (!currentStudy) return;
+
+    elements.studyTitle.textContent = currentStudy.location;
+
+    const typeClass = currentStudy.study_type.toLowerCase().replace(/\s+/g, '-');
+    elements.studyTypeBadge.textContent = currentStudy.study_type;
+    elements.studyTypeBadge.className = `type-badge ${typeClass}`;
+
+    elements.studyDirection.textContent = currentStudy.direction || 'N/A';
+    elements.studyDates.textContent = formatDateRange(currentStudy.start_datetime, currentStudy.end_datetime);
+    elements.studySpeedLimit.textContent = currentStudy.speed_limit ? `${currentStudy.speed_limit} mph` : 'N/A';
+}
+
+function updateChartTypeOptions() {
+    if (!currentStudy) return;
+
+    const isVolumeOnly = VOLUME_STUDY_TYPES.includes(currentStudy.study_type);
+    const select = elements.chartTypeSelect;
+
+    Array.from(select.options).forEach(option => {
+        option.disabled = option.value !== 'volume-only' && isVolumeOnly;
+    });
+
+    if (isVolumeOnly) {
+        select.value = 'volume-only';
+    } else if (select.value === 'volume-only') {
+        select.value = 'vehicles-violators';
+    }
+}
+
+// ============ Charts ============
+
+function updateChart() {
+    if (!currentStudy || !filteredStudyData) return;
+
+    const chartType = elements.chartTypeSelect.value;
+    const timeAgg = elements.timeAggSelect.value;
+    const showLabels = elements.showLabelsCheck.checked;
+
+    createChart(
+        elements.chartCanvas,
+        chartType,
+        filteredStudyData,
+        timeAgg,
+        {
+            showLabels,
+            speedLimit: currentStudy.speed_limit || 0
+        }
+    );
+}
+
+function updateStats() {
+    if (!filteredStudyData) {
+        elements.statTotal.textContent = '-';
+        elements.statViolators.textContent = '-';
+        elements.statPct.textContent = '-';
+        elements.statAvgSpeed.textContent = '-';
+        elements.stat85th.textContent = '-';
+        elements.statPeak.textContent = '-';
+        return;
+    }
+
+    const stats = calculateStats(filteredStudyData);
+
+    elements.statTotal.textContent = formatNumber(stats.totalVehicles);
+    elements.statViolators.textContent = formatNumber(stats.totalViolators);
+    elements.statPct.textContent = stats.totalVehicles > 0 ? formatDecimal(stats.pctSpeeders) + '%' : '-';
+    elements.statAvgSpeed.textContent = stats.avgSpeed > 0 ? formatDecimal(stats.avgSpeed) + ' mph' : '-';
+    elements.stat85th.textContent = stats.p85 ? formatDecimal(stats.p85) + ' mph' : 'N/A';
+    elements.statPeak.textContent = stats.peakSpeed > 0 ? formatDecimal(stats.peakSpeed) + ' mph' : '-';
+}
+
+// ============ Tabs ============
+
+function switchTab(tabId) {
+    elements.tabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabId);
+    });
+
+    elements.tabPanes.forEach(pane => {
+        pane.classList.toggle('active', pane.id === `${tabId}-tab`);
+    });
+
+    if (tabId === 'map' && !map) {
+        initMap();
+    }
+    if (tabId === 'map' && map) {
+        setTimeout(() => map.invalidateSize(), 100);
+    }
+}
+
+// ============ Map with Linked Study Grouping ============
+
+function initMap() {
+    if (map) return;
+
+    map = L.map(elements.mapContainer).setView([MAP_CENTER.lat, MAP_CENTER.lon], MAP_CENTER.zoom);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    markersLayer = L.layerGroup().addTo(map);
+
+    updateMapMarkers();
+
+    setTimeout(() => map.invalidateSize(), 100);
+}
+
+function updateMapMarkers() {
+    if (!markersLayer) return;
+
+    markersLayer.clearLayers();
+    studyMarkers.clear();
+
+    const filterType = elements.mapFilterType.value;
+    let studies = studyIndex.getWithCoordinates();
+
+    if (filterType) {
+        studies = studies.filter(s => s.study_type === filterType);
+    }
+
+    const linkGroups = new Map();
+    const unlinkedStudies = [];
+
+    studies.forEach(study => {
+        const linkGroup = study.link_group ? String(study.link_group).trim() : '';
+        if (linkGroup !== '') {
+            if (!linkGroups.has(linkGroup)) {
+                linkGroups.set(linkGroup, []);
+            }
+            linkGroups.get(linkGroup).push(study);
+        } else {
+            unlinkedStudies.push(study);
+        }
+    });
+
+    let markerCount = 0;
+
+    linkGroups.forEach((groupStudies) => {
+        addLinkedMarker(groupStudies);
+        markerCount++;
+    });
+
+    unlinkedStudies.forEach(study => {
+        addSingleMarker(study);
+        markerCount++;
+    });
+
+    elements.mapStudyCount.textContent = `${studies.length} studies (${markerCount} markers)`;
+
+    if (studies.length > 0) {
+        const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
+        map.fitBounds(bounds, { padding: [50, 50] });
+    }
+}
+
+function getMarkerColor(studyType) {
+    return MARKER_COLORS[studyType] || '#666666';
+}
+
+function addLinkedMarker(studies) {
+    let totalLat = 0, totalLon = 0;
+    studies.forEach(s => { totalLat += s.lat; totalLon += s.lon; });
+    const centLat = totalLat / studies.length;
+    const centLon = totalLon / studies.length;
+
+    const firstType = studies[0].study_type;
+    const allSameType = studies.every(s => s.study_type === firstType);
+    const markerColor = allSameType ? getMarkerColor(firstType) : '#9333ea';
+
+    let popupHtml = `<div class="popup-title">🔗 ${escapeHtml(studies[0].location)}</div><hr style="margin:8px 0">`;
+
+    studies.forEach(s => {
+        popupHtml += `
+            <div style="margin:8px 0;padding:8px;background:var(--bg-secondary, #f5f5f5);border-radius:4px;">
+                <strong>${s.direction || 'Unknown'}</strong> (ID: ${s.study_id})<br>
+                <small>${s.study_type} | ${formatDateRange(s.start_datetime, s.end_datetime)}</small><br>
+                <button class="popup-btn" style="margin-top:5px" onclick="window.viewStudy('${s.study_id}')">View</button>
+            </div>
+        `;
+    });
+
+    const icon = L.divIcon({
+        className: 'linked-marker',
+        html: `<div style="background:${markerColor};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);font-size:14px;">🔗</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+    });
+
+    const marker = L.marker([centLat, centLon], { icon }).bindPopup(popupHtml, { maxWidth: 300, maxHeight: 400 });
+    markersLayer.addLayer(marker);
+
+    // Store marker for each study in this group
+    studies.forEach(s => studyMarkers.set(s.study_id, marker));
+}
+
+function addSingleMarker(study) {
+    const color = getMarkerColor(study.study_type);
+
+    const popupHtml = `
+        <div class="popup-title">${escapeHtml(study.location)}</div>
+        <div class="popup-info">
+            <div><strong>Type:</strong> ${study.study_type}</div>
+            <div><strong>Direction:</strong> ${study.direction || 'N/A'}</div>
+            <div><strong>Dates:</strong> ${formatDateRange(study.start_datetime, study.end_datetime)}</div>
+            ${study.speed_limit ? `<div><strong>Speed Limit:</strong> ${study.speed_limit} mph</div>` : ''}
+        </div>
+        <button class="popup-btn" onclick="window.viewStudy('${study.study_id}')">View Study</button>
+    `;
+
+    const icon = L.divIcon({
+        className: 'single-marker',
+        html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+
+    const marker = L.marker([study.lat, study.lon], { icon }).bindPopup(popupHtml);
+    markersLayer.addLayer(marker);
+
+    studyMarkers.set(study.study_id, marker);
+}
+
+function zoomToStudy(studyId) {
+    if (!map) return;
+
+    const study = studyIndex.getById(studyId);
+    if (!study || !study.lat || !study.lon) return;
+
+    // Zoom to the study location
+    map.setView([study.lat, study.lon], 15, { animate: true });
+
+    // Open the popup for this study's marker
+    const marker = studyMarkers.get(studyId);
+    if (marker) {
+        marker.openPopup();
+    }
+}
+
+window.viewStudy = function(studyId) {
+    switchTab('charts');
+    selectStudy(studyId);
+};
+
+// ============ Advanced Report Builder ============
+
+// Chart type display names
+const CHART_TYPE_NAMES = {
+    'vehicles-violators': 'Vehicles & Violators',
+    'pct-speeders': '% Speeders',
+    'avg-peak-speeds': 'Average & Peak Speeds',
+    'avg-vs-85th': 'Avg vs 85th Percentile',
+    'volume-only': 'Volume Only'
+};
+
+function openAddChartModal() {
+    editingItemIndex = -1;
+    elements.chartModalTitle.textContent = 'Add Chart';
+    elements.saveChartModal.textContent = 'Add Chart';
+
+    // Reset form
+    resetChartModal();
+
+    // If we have a current study, pre-select it
+    if (currentStudy) {
+        modalSelectedStudyId = currentStudy.study_id;
+        modalSelectedStudyMeta = currentStudy;
+        updateSelectedStudyDisplay();
+    }
+
+    elements.chartModal.style.display = 'flex';
+}
+
+function openEditChartModal(index) {
+    editingItemIndex = index;
+    const item = reportItems[index];
+
+    elements.chartModalTitle.textContent = 'Edit Chart';
+    elements.saveChartModal.textContent = 'Save Changes';
+
+    // Populate form with item data
+    modalSelectedStudyId = item.studyId;
+    modalSelectedStudyMeta = item.studyMeta;
+    updateSelectedStudyDisplay();
+
+    elements.chartModalType.value = item.chartType;
+    elements.chartModalTimeAgg.value = item.timeAgg;
+    elements.chartModalFullRange.checked = item.fullRange;
+    elements.chartModalDateRange.style.display = item.fullRange ? 'none' : 'flex';
+    elements.chartModalStartDate.value = item.startDate || '';
+    elements.chartModalEndDate.value = item.endDate || '';
+    elements.chartModalShowLabels.checked = item.showLabels;
+
+    // Days of week
+    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
+    dayCheckboxes.forEach(cb => {
+        cb.checked = item.daysOfWeek.includes(parseInt(cb.value));
+    });
+
+    // Time filter
+    elements.chartModalTimeFilter.checked = item.timeFilterEnabled;
+    elements.chartModalTimeRange.style.display = item.timeFilterEnabled ? 'flex' : 'none';
+    elements.chartModalTimeStart.value = item.timeStart || '07:00';
+    elements.chartModalTimeEnd.value = item.timeEnd || '18:00';
+
+    elements.chartModal.style.display = 'flex';
+}
+
+function closeChartModal() {
+    elements.chartModal.style.display = 'none';
+    elements.chartStudyList.classList.remove('show');
+}
+
+function resetChartModal() {
+    modalSelectedStudyId = null;
+    modalSelectedStudyMeta = null;
+    elements.chartSelectedStudy.textContent = 'No study selected';
+    elements.chartStudySearch.value = '';
+    elements.chartModalType.value = 'vehicles-violators';
+    elements.chartModalTimeAgg.value = 'daily';
+    elements.chartModalFullRange.checked = true;
+    elements.chartModalDateRange.style.display = 'none';
+    elements.chartModalStartDate.value = '';
+    elements.chartModalEndDate.value = '';
+    elements.chartModalShowLabels.checked = true;
+    elements.chartModalTimeFilter.checked = false;
+    elements.chartModalTimeRange.style.display = 'none';
+
+    // Reset all days to checked
+    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
+    dayCheckboxes.forEach(cb => cb.checked = true);
+}
+
+function toggleDateRange() {
+    elements.chartModalDateRange.style.display = elements.chartModalFullRange.checked ? 'none' : 'flex';
+}
+
+function toggleTimeFilter() {
+    elements.chartModalTimeRange.style.display = elements.chartModalTimeFilter.checked ? 'flex' : 'none';
+}
+
+function setModalDayPreset(preset) {
+    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
+    dayCheckboxes.forEach(cb => {
+        const day = parseInt(cb.value);
+        if (preset === 'weekdays') {
+            cb.checked = day >= 1 && day <= 5;
+        } else if (preset === 'weekend') {
+            cb.checked = day === 0 || day === 6;
+        } else {
+            cb.checked = true;
+        }
+    });
+}
+
+function setTimePreset(start, end) {
+    elements.chartModalTimeStart.value = start;
+    elements.chartModalTimeEnd.value = end;
+}
+
+function filterStudyDropdown() {
+    const query = elements.chartStudySearch.value.toLowerCase().trim();
+    let studies = studyIndex.getAll();
+
+    if (query) {
+        studies = studies.filter(s => {
+            const location = (s.location || '').toLowerCase();
+            const counter = (s.counter_number || '').toLowerCase();
+            const id = (s.study_id || '').toLowerCase();
+            return location.includes(query) || counter.includes(query) || id.includes(query);
+        });
+    }
+
+    // Limit to 20 results
+    studies = studies.slice(0, 20);
+
+    elements.chartStudyList.innerHTML = studies.map(s => `
+        <div class="study-dropdown-item" onclick="selectModalStudy('${s.study_id}')">
+            <div class="location">${escapeHtml(s.location)}</div>
+            <div class="meta">${s.direction || ''} | ${s.study_type}</div>
+        </div>
+    `).join('');
+
+    elements.chartStudyList.classList.add('show');
+}
+
+window.selectModalStudy = function(studyId) {
+    const study = studyIndex.getById(studyId);
+    if (study) {
+        modalSelectedStudyId = studyId;
+        modalSelectedStudyMeta = study;
+        updateSelectedStudyDisplay();
+
+        // Set date range from study
+        if (study.start_datetime) {
+            elements.chartModalStartDate.value = formatDateForInput(new Date(study.start_datetime));
+        }
+        if (study.end_datetime) {
+            elements.chartModalEndDate.value = formatDateForInput(new Date(study.end_datetime));
+        }
+    }
+    elements.chartStudyList.classList.remove('show');
+    elements.chartStudySearch.value = '';
+};
+
+function updateSelectedStudyDisplay() {
+    if (modalSelectedStudyMeta) {
+        elements.chartSelectedStudy.innerHTML = `
+            <strong>${escapeHtml(modalSelectedStudyMeta.location)}</strong>
+            <span style="color: var(--text-secondary); font-size: 0.85rem;">
+                ${modalSelectedStudyMeta.direction || ''} | ${modalSelectedStudyMeta.study_type}
+            </span>
+        `;
+    } else {
+        elements.chartSelectedStudy.textContent = 'No study selected';
+    }
+}
+
+function saveChartItem() {
+    if (!modalSelectedStudyId || !modalSelectedStudyMeta) {
+        alert('Please select a study');
+        return;
+    }
+
+    const daysOfWeek = Array.from(document.querySelectorAll('input[name="chart-modal-day"]:checked'))
+        .map(cb => parseInt(cb.value));
+
+    if (daysOfWeek.length === 0) {
+        alert('Please select at least one day of the week');
+        return;
+    }
+
+    const item = {
+        studyId: modalSelectedStudyId,
+        studyMeta: modalSelectedStudyMeta,
+        chartType: elements.chartModalType.value,
+        timeAgg: elements.chartModalTimeAgg.value,
+        fullRange: elements.chartModalFullRange.checked,
+        startDate: elements.chartModalStartDate.value,
+        endDate: elements.chartModalEndDate.value,
+        daysOfWeek: daysOfWeek,
+        timeFilterEnabled: elements.chartModalTimeFilter.checked,
+        timeStart: elements.chartModalTimeStart.value,
+        timeEnd: elements.chartModalTimeEnd.value,
+        showLabels: elements.chartModalShowLabels.checked
+    };
+
+    if (editingItemIndex >= 0) {
+        reportItems[editingItemIndex] = item;
+    } else {
+        reportItems.push(item);
+    }
+
+    closeChartModal();
+    renderReportItems();
+    updatePageCount();
+}
+
+// Table type display names
+const TABLE_TYPE_NAMES = {
+    'speed-summary': 'Speed Summary (24-Hour)',
+    'volume-summary': 'Volume Summary (24-Hour)',
+    'daily-speed-bins': 'Daily Speed Bins'
+};
+
+function renderReportItems() {
+    if (reportItems.length === 0) {
+        elements.reportItemsList.innerHTML = '<p class="empty-list-message">No items added. Click "Add Chart" or "Add Data Table" to begin.</p>';
+        elements.generateReportBtn.disabled = true;
+        return;
+    }
+
+    elements.reportItemsList.innerHTML = reportItems.map((item, index) => {
+        const location = item.studyMeta?.location || 'Unknown';
+        const direction = item.studyMeta?.direction || '';
+
+        // Check if this is a table or chart item
+        const isTable = item.type === 'table';
+        const itemTypeName = isTable
+            ? TABLE_TYPE_NAMES[item.tableType] || item.tableType
+            : CHART_TYPE_NAMES[item.chartType] || item.chartType;
+
+        // Build description line
+        let metaStr = itemTypeName;
+        if (!isTable) {
+            metaStr += ` | ${item.timeAgg}`;
+        }
+
+        // Build filter description
+        let filters = [];
+        if (isTable) {
+            if (item.startDate && item.endDate) {
+                filters.push(`${item.startDate} to ${item.endDate}`);
+            }
+        } else {
+            if (!item.fullRange && item.startDate) {
+                filters.push(`${item.startDate} to ${item.endDate}`);
+            }
+            if (item.daysOfWeek && item.daysOfWeek.length < 7) {
+                if (item.daysOfWeek.length === 5 && !item.daysOfWeek.includes(0) && !item.daysOfWeek.includes(6)) {
+                    filters.push('Weekdays');
+                } else if (item.daysOfWeek.length === 2 && item.daysOfWeek.includes(0) && item.daysOfWeek.includes(6)) {
+                    filters.push('Weekend');
+                }
+            }
+            if (item.timeFilterEnabled) {
+                filters.push(`${item.timeStart}-${item.timeEnd}`);
+            }
+        }
+        const filterStr = filters.length > 0 ? ` (${filters.join(', ')})` : '';
+
+        // Different edit handler for tables vs charts
+        const editHandler = isTable ? `openEditTableModal(${index})` : `openEditChartModal(${index})`;
+        const itemIcon = isTable ? '📋' : '📊';
+
+        return `
+            <div class="report-item ${isTable ? 'report-item-table' : ''}">
+                <span class="report-item-number">${itemIcon} ${index + 1}</span>
+                <div class="report-item-info">
+                    <div class="report-item-title">${escapeHtml(location)}${direction ? ' - ' + direction : ''}</div>
+                    <div class="report-item-meta">${metaStr}${filterStr}</div>
+                </div>
+                <div class="report-item-actions">
+                    <button onclick="moveReportItem(${index}, -1)" title="Move up" ${index === 0 ? 'disabled' : ''}>↑</button>
+                    <button onclick="moveReportItem(${index}, 1)" title="Move down" ${index === reportItems.length - 1 ? 'disabled' : ''}>↓</button>
+                    <button onclick="${editHandler}" title="Edit">✎</button>
+                    <button onclick="duplicateReportItem(${index})" title="Duplicate">⧉</button>
+                    <button class="delete" onclick="deleteReportItem(${index})" title="Delete">✕</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    elements.generateReportBtn.disabled = false;
+}
+
+window.moveReportItem = function(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= reportItems.length) return;
+
+    [reportItems[index], reportItems[newIndex]] = [reportItems[newIndex], reportItems[index]];
+    renderReportItems();
+};
+
+window.duplicateReportItem = function(index) {
+    const copy = { ...reportItems[index], studyMeta: { ...reportItems[index].studyMeta } };
+    reportItems.splice(index + 1, 0, copy);
+    renderReportItems();
+    updatePageCount();
+};
+
+window.deleteReportItem = function(index) {
+    reportItems.splice(index, 1);
+    renderReportItems();
+    updatePageCount();
+};
+
+function updatePageCount() {
+    const chartsPerPage = parseInt(elements.reportChartsPerPage.value);
+
+    // Separate charts and tables
+    const charts = reportItems.filter(item => item.type !== 'table');
+    const tables = reportItems.filter(item => item.type === 'table');
+
+    // Calculate chart pages
+    const chartPages = charts.length > 0 ? Math.ceil(charts.length / chartsPerPage) : 0;
+
+    // Calculate table pages
+    let tablePages = 0;
+    tables.forEach(table => {
+        if (table.tableType === 'daily-speed-bins') {
+            // Daily Speed Bins is always 1 page
+            tablePages += 1;
+        } else {
+            // Speed Summary and Volume Summary: 1 page per day
+            const days = calculateDayCount(table.startDate, table.endDate);
+            tablePages += days;
+        }
+    });
+
+    const totalPages = chartPages + tablePages;
+    const chartCount = charts.length;
+    const tableCount = tables.length;
+
+    let description = [];
+    if (chartCount > 0) description.push(`${chartCount} chart${chartCount !== 1 ? 's' : ''}`);
+    if (tableCount > 0) description.push(`${tableCount} table${tableCount !== 1 ? 's' : ''}`);
+
+    elements.pageCountDisplay.textContent = `Total pages: ${totalPages} (${description.join(', ')})`;
+}
+
+function calculateDayCount(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
+}
+
+// ============ Data Table Modal Functions ============
+
+function openAddTableModal() {
+    editingTableItemIndex = -1;
+    elements.tableModalTitle.textContent = 'Add Data Table';
+    elements.saveTableModal.textContent = 'Add Table';
+
+    // Reset form
+    resetTableModal();
+
+    // If we have a current study, pre-select it
+    if (currentStudy) {
+        tableModalSelectedStudyId = currentStudy.study_id;
+        tableModalSelectedStudyMeta = currentStudy;
+        updateTableSelectedStudyDisplay();
+        updateTableTypeOptions();
+        setTableFullRange();
+    }
+
+    elements.tableModal.style.display = 'flex';
+}
+
+window.openEditTableModal = function(index) {
+    editingTableItemIndex = index;
+    const item = reportItems[index];
+
+    elements.tableModalTitle.textContent = 'Edit Data Table';
+    elements.saveTableModal.textContent = 'Save Changes';
+
+    // Populate form with item data
+    tableModalSelectedStudyId = item.studyId;
+    tableModalSelectedStudyMeta = item.studyMeta;
+    updateTableSelectedStudyDisplay();
+    updateTableTypeOptions();
+
+    elements.tableModalType.value = item.tableType;
+    elements.tableModalStartDate.value = item.startDate || '';
+    elements.tableModalEndDate.value = item.endDate || '';
+
+    updateTablePageCount();
+
+    elements.tableModal.style.display = 'flex';
+};
+
+function closeTableModal() {
+    elements.tableModal.style.display = 'none';
+    if (elements.tableStudyList) {
+        elements.tableStudyList.classList.remove('show');
+    }
+}
+
+function resetTableModal() {
+    tableModalSelectedStudyId = null;
+    tableModalSelectedStudyMeta = null;
+    elements.tableSelectedStudy.textContent = 'No study selected';
+    elements.tableStudySearch.value = '';
+    elements.tableModalType.value = 'speed-summary';
+    elements.tableModalStartDate.value = '';
+    elements.tableModalEndDate.value = '';
+    elements.tablePageCount.textContent = '(0 pages)';
+}
+
+function updateTableSelectedStudyDisplay() {
+    if (tableModalSelectedStudyMeta) {
+        elements.tableSelectedStudy.innerHTML = `
+            <strong>${escapeHtml(tableModalSelectedStudyMeta.location)}</strong>
+            <span style="color: var(--text-secondary); font-size: 0.85rem;">
+                ${tableModalSelectedStudyMeta.direction || ''} | ${tableModalSelectedStudyMeta.study_type}
+            </span>
+        `;
+    } else {
+        elements.tableSelectedStudy.textContent = 'No study selected';
+    }
+}
+
+function updateTableTypeOptions() {
+    if (!tableModalSelectedStudyMeta) return;
+
+    const studyType = tableModalSelectedStudyMeta.study_type;
+    const select = elements.tableModalType;
+
+    // Enable/disable options based on study type
+    Array.from(select.options).forEach(option => {
+        const tableType = DATA_TABLE_TYPES[option.value];
+        if (tableType) {
+            option.disabled = !tableType.allowedStudyTypes.includes(studyType);
+        }
+    });
+
+    // If current selection is disabled, select first enabled option
+    if (select.selectedOptions[0]?.disabled) {
+        const firstEnabled = Array.from(select.options).find(opt => !opt.disabled);
+        if (firstEnabled) select.value = firstEnabled.value;
+    }
+}
+
+function filterTableStudyDropdown() {
+    const query = elements.tableStudySearch.value.toLowerCase().trim();
+    let studies = studyIndex.getAll();
+
+    if (query) {
+        studies = studies.filter(s => {
+            const location = (s.location || '').toLowerCase();
+            const counter = (s.counter_number || '').toLowerCase();
+            const id = (s.study_id || '').toLowerCase();
+            return location.includes(query) || counter.includes(query) || id.includes(query);
+        });
+    }
+
+    // Limit to 20 results
+    studies = studies.slice(0, 20);
+
+    elements.tableStudyList.innerHTML = studies.map(s => `
+        <div class="study-dropdown-item" onclick="selectTableModalStudy('${s.study_id}')">
+            <div class="location">${escapeHtml(s.location)}</div>
+            <div class="meta">${s.direction || ''} | ${s.study_type}</div>
+        </div>
+    `).join('');
+
+    elements.tableStudyList.classList.add('show');
+}
+
+window.selectTableModalStudy = function(studyId) {
+    const study = studyIndex.getById(studyId);
+    if (study) {
+        tableModalSelectedStudyId = studyId;
+        tableModalSelectedStudyMeta = study;
+        updateTableSelectedStudyDisplay();
+        updateTableTypeOptions();
+        setTableFullRange();
+    }
+    elements.tableStudyList.classList.remove('show');
+    elements.tableStudySearch.value = '';
+};
+
+function setTableFullRange() {
+    if (!tableModalSelectedStudyMeta) return;
+
+    if (tableModalSelectedStudyMeta.start_datetime) {
+        elements.tableModalStartDate.value = formatDateForInput(new Date(tableModalSelectedStudyMeta.start_datetime));
+    }
+    if (tableModalSelectedStudyMeta.end_datetime) {
+        elements.tableModalEndDate.value = formatDateForInput(new Date(tableModalSelectedStudyMeta.end_datetime));
+    }
+    updateTablePageCount();
+}
+
+function onTableTypeChange() {
+    updateTablePageCount();
+}
+
+function updateTablePageCount() {
+    const tableType = elements.tableModalType.value;
+    const startDate = elements.tableModalStartDate.value;
+    const endDate = elements.tableModalEndDate.value;
+
+    let pages = 0;
+    if (tableType === 'daily-speed-bins') {
+        pages = 1; // Always 1 page
+    } else {
+        pages = calculateDayCount(startDate, endDate);
+    }
+
+    elements.tablePageCount.textContent = `(${pages} page${pages !== 1 ? 's' : ''})`;
+}
+
+function saveTableItem() {
+    if (!tableModalSelectedStudyId || !tableModalSelectedStudyMeta) {
+        alert('Please select a study');
+        return;
+    }
+
+    const startDate = elements.tableModalStartDate.value;
+    const endDate = elements.tableModalEndDate.value;
+
+    if (!startDate || !endDate) {
+        alert('Please select a date range');
+        return;
+    }
+
+    if (new Date(startDate) > new Date(endDate)) {
+        alert('Start date must be before end date');
+        return;
+    }
+
+    const item = {
+        type: 'table',
+        studyId: tableModalSelectedStudyId,
+        studyMeta: tableModalSelectedStudyMeta,
+        tableType: elements.tableModalType.value,
+        startDate: startDate,
+        endDate: endDate
+    };
+
+    if (editingTableItemIndex >= 0) {
+        reportItems[editingTableItemIndex] = item;
+    } else {
+        reportItems.push(item);
+    }
+
+    closeTableModal();
+    renderReportItems();
+    updatePageCount();
+}
+
+function filterDataForItem(data, item) {
+    return data.filter(d => {
+        if (!d.datetime) return false;
+        const dt = new Date(d.datetime);
+
+        // Date range filter
+        if (!item.fullRange) {
+            if (item.startDate) {
+                const start = new Date(item.startDate + 'T00:00:00');
+                if (dt < start) return false;
+            }
+            if (item.endDate) {
+                const end = new Date(item.endDate + 'T23:59:59');
+                if (dt > end) return false;
+            }
+        }
+
+        // Day of week filter
+        if (!item.daysOfWeek.includes(dt.getDay())) return false;
+
+        // Time of day filter
+        if (item.timeFilterEnabled) {
+            const timeStr = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+            if (timeStr < item.timeStart || timeStr > item.timeEnd) return false;
+        }
+
+        return true;
+    });
+}
+
+async function generateReport() {
+    if (reportItems.length === 0) {
+        alert('Please add at least one item to the report');
+        return;
+    }
+
+    elements.reportStatus.textContent = 'Loading resources...';
+    elements.generateReportBtn.disabled = true;
+
+    // Try to load logo from data folder
+    let logoDataUrl = null;
+    try {
+        const logoFile = await fileSystem.getFileInFolder('montgomery_logo.png');
+        if (logoFile) {
+            const blob = await logoFile.getFile();
+            logoDataUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+    } catch (e) {
+        console.log('Logo not found in data folder, continuing without logo');
+    }
+
+    elements.reportStatus.textContent = 'Generating report...';
+
+    // Create high-resolution off-screen canvas for charts
+    // Aspect ratio should match PDF placement: 190mm wide x 115mm (1 chart) or 58mm (2 charts)
+    // For best results, use wider aspect ratio that works for both layouts
+    const pdfCanvas = document.createElement('canvas');
+    const pdfCtx = pdfCanvas.getContext('2d');
+    const SCALE = 2; // 2x resolution for crisp PDF
+    pdfCanvas.width = 1900 * SCALE;   // Width for PDF
+    pdfCanvas.height = 1000 * SCALE;  // Height proportional for good chart display
+
+    try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'letter');
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const chartsPerPage = parseInt(elements.reportChartsPerPage.value);
+
+        // Separate charts and tables
+        const chartItems = reportItems.filter(item => item.type !== 'table');
+        const tableItems = reportItems.filter(item => item.type === 'table');
+
+        // Get first study info for header (if charts exist)
+        let firstStudy = null;
+        let overallStats = null;
+        if (chartItems.length > 0) {
+            firstStudy = chartItems[0].studyMeta;
+            // Calculate overall stats from first chart's data
+            const firstData = await studyIndex.loadStudyData(chartItems[0].studyId);
+            const firstFiltered = filterDataForItem(firstData, chartItems[0]);
+            overallStats = calculateReportStatistics(firstFiltered);
+        }
+
+        let currentPage = 1;
+        let chartY = chartsPerPage === 1 ? 38 : 36;
+        let chartsOnPage = 0;
+        let isFirstPage = true;
+
+        // Draw report header on first page
+        await drawReportHeader(doc, firstStudy, overallStats, chartItems[0], logoDataUrl, pageWidth, true);
+
+        // Process chart items
+        for (let i = 0; i < chartItems.length; i++) {
+            const item = chartItems[i];
+            elements.reportStatus.textContent = `Generating chart ${i + 1} of ${chartItems.length}...`;
+
+            const studyData = await studyIndex.loadStudyData(item.studyId);
+            const filteredData = filterDataForItem(studyData, item);
+
+            if (filteredData.length === 0) {
+                console.warn(`No data for chart ${i + 1}`);
+                continue;
+            }
+
+            const chartHeight = chartsPerPage === 1 ? 115 : 58;
+            const chartSpacing = chartsPerPage === 1 ? 125 : 68;
+
+            // Check if need new page
+            if (chartsOnPage >= chartsPerPage) {
+                doc.addPage();
+                currentPage++;
+                chartY = 28;
+                chartsOnPage = 0;
+                isFirstPage = false;
+                // Draw header on continuation pages
+                await drawReportHeader(doc, item.studyMeta, null, item, logoDataUrl, pageWidth, false);
+            }
+
+            // Render chart to high-res canvas
+            const chartImgData = await renderChartToCanvas(pdfCanvas, item, filteredData, SCALE);
+
+            if (chartImgData) {
+                doc.addImage(chartImgData, 'PNG', 10, chartY, 190, chartHeight);
+            }
+
+            chartY += chartSpacing;
+            chartsOnPage++;
+        }
+
+        // Process table items - each table gets its own page(s)
+        for (let i = 0; i < tableItems.length; i++) {
+            const item = tableItems[i];
+            const tableType = item.tableType;
+
+            elements.reportStatus.textContent = `Generating table ${i + 1} of ${tableItems.length}...`;
+
+            const studyData = await studyIndex.loadStudyData(item.studyId);
+
+            if (tableType === 'daily-speed-bins') {
+                doc.addPage();
+                currentPage++;
+
+                const tableCanvas = renderDailySpeedBinsTable(
+                    studyData,
+                    item.startDate,
+                    item.endDate,
+                    item.studyMeta.speed_limit || 25,
+                    item.studyMeta,
+                    logoDataUrl
+                );
+
+                const imgData = tableCanvas.toDataURL('image/png', 1.0);
+                // Full page width, good height for landscape-style table
+                doc.addImage(imgData, 'PNG', 5, 8, pageWidth - 10, pageHeight - 20);
+
+            } else {
+                const startDate = new Date(item.startDate);
+                const endDate = new Date(item.endDate);
+
+                for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                    const dateStr = d.toISOString().split('T')[0];
+
+                    doc.addPage();
+                    currentPage++;
+
+                    let tableCanvas;
+                    if (tableType === 'speed-summary') {
+                        tableCanvas = renderSpeedSummaryTable(
+                            studyData,
+                            dateStr,
+                            item.studyMeta.speed_limit || 25,
+                            item.studyMeta,
+                            logoDataUrl
+                        );
+                    } else {
+                        tableCanvas = renderVolumeSummaryTable(
+                            studyData,
+                            dateStr,
+                            item.studyMeta,
+                            logoDataUrl
+                        );
+                    }
+
+                    const imgData = tableCanvas.toDataURL('image/png', 1.0);
+                    // Full page coverage for 24-hour tables
+                    doc.addImage(imgData, 'PNG', 5, 8, pageWidth - 10, pageHeight - 20);
+                }
+            }
+        }
+
+        // Restore chart view if a study is selected
+        if (currentStudy && currentStudyData) {
+            updateChart();
+        }
+
+        // Page numbers on all pages
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(128, 128, 128);
+            doc.text(
+                `Page ${i} of ${pageCount}`,
+                pageWidth / 2, pageHeight - 8, { align: 'center' }
+            );
+        }
+
+        // Filename with date prefix
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '-');
+        const reportTitle = elements.reportTitle.value || 'Traffic Study Report';
+        const fileName = `(${dateStr}) ${reportTitle.replace(/[^a-z0-9 ]/gi, '').substring(0, 50)}.pdf`;
+
+        doc.save(fileName);
+        elements.reportStatus.textContent = `Report saved as ${fileName}`;
+
+    } catch (error) {
+        console.error('Error generating report:', error);
+        elements.reportStatus.textContent = `Error: ${error.message}`;
+    } finally {
+        elements.generateReportBtn.disabled = reportItems.length === 0;
+    }
+}
+
+/**
+ * Render a chart to a high-resolution canvas for PDF
+ */
+async function renderChartToCanvas(canvas, item, filteredData, scale) {
+    const ctx = canvas.getContext('2d');
+
+    // Clear canvas
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // IMPORTANT: Aggregate data just like chartFactory.js does
+    const aggregatedData = item.timeAgg === 'hourly'
+        ? aggregateHourly(filteredData)
+        : aggregateDaily(filteredData);
+
+    if (aggregatedData.length === 0) {
+        console.warn('No aggregated data for chart');
+        return null;
+    }
+
+    // Get chart config with aggregated data
+    const chartTitle = `${item.studyMeta.location}${item.studyMeta.direction ? ' (' + item.studyMeta.direction + ')' : ''} - ${CHART_TYPE_NAMES[item.chartType]}`;
+    const config = getChartConfigForPDF(item.chartType, aggregatedData, {
+        showLabels: item.showLabels,
+        speedLimit: item.studyMeta.speed_limit || 0,
+        title: chartTitle
+    });
+
+    // Override options for PDF rendering
+    config.options = {
+        ...config.options,
+        responsive: false,
+        maintainAspectRatio: false,
+        devicePixelRatio: scale,
+        animation: false
+    };
+
+    // Create chart
+    const tempChart = new Chart(ctx, config);
+
+    // Wait for render
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    const imgData = canvas.toDataURL('image/png', 1.0);
+
+    tempChart.destroy();
+
+    return imgData;
+}
+
+/**
+ * Get Chart.js config formatted for PDF export
+ */
+function getChartConfigForPDF(chartType, data, options = {}) {
+    const { showLabels = true, speedLimit = 0, title = '' } = options;
+    const labels = data.map(d => d.label);
+
+    const baseOptions = {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: {
+            padding: {
+                top: 10,
+                right: 20,
+                bottom: 10,
+                left: 20
+            }
+        },
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: {
+                    font: { size: 24, weight: 'bold' },
+                    usePointStyle: true,
+                    padding: 30,
+                    boxWidth: 20,
+                    boxHeight: 20
+                }
+            },
+            title: {
+                display: true,
+                text: title,
+                font: { size: 32, weight: 'bold' },
+                padding: { top: 10, bottom: 20 }
+            }
+        },
+        scales: {
+            x: {
+                grid: { display: false },
+                ticks: { font: { size: 20 }, maxRotation: 45, minRotation: 0 }
+            },
+            y: {
+                grid: { color: '#e0e0e0' },
+                ticks: { font: { size: 20 } },
+                title: { font: { size: 22 } }
+            }
+        }
+    };
+
+    switch (chartType) {
+        case 'vehicles-violators':
+            return {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'Law-Abiding',
+                            data: data.map(d => d.non_speeders),
+                            backgroundColor: CHART_COLORS.lawAbiding,
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Violators',
+                            data: data.map(d => d.violators),
+                            backgroundColor: CHART_COLORS.violators,
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    ...baseOptions,
+                    scales: {
+                        ...baseOptions.scales,
+                        y: { ...baseOptions.scales.y, beginAtZero: true, title: { display: true, text: 'Count', font: { size: 13 } } }
+                    },
+                    plugins: {
+                        ...baseOptions.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            font: { size: 10, weight: 'bold' }
+                        } : { display: false }
+                    }
+                }
+            };
+
+        case 'pct-speeders':
+            return {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: '% Speeders',
+                        data: data.map(d => d.pct_speeders),
+                        backgroundColor: CHART_COLORS.percentile85,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    ...baseOptions,
+                    scales: {
+                        ...baseOptions.scales,
+                        y: {
+                            ...baseOptions.scales.y,
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'Percentage', font: { size: 13 } },
+                            ticks: { callback: v => v + '%', font: { size: 12 } }
+                        }
+                    }
+                }
+            };
+
+        case 'avg-peak-speeds':
+            const datasets = [
+                {
+                    label: 'Average',
+                    data: data.map(d => d.avg_speed),
+                    borderColor: CHART_COLORS.avgSpeed,
+                    backgroundColor: CHART_COLORS.avgSpeed + '60',
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 2
+                },
+                {
+                    label: 'Peak',
+                    data: data.map(d => d.peak_speed),
+                    borderColor: CHART_COLORS.peakSpeed,
+                    backgroundColor: CHART_COLORS.peakSpeed + '60',
+                    fill: true,
+                    tension: 0.3,
+                    borderWidth: 2
+                }
+            ];
+            if (speedLimit > 0) {
+                datasets.push({
+                    label: `Limit (${speedLimit})`,
+                    data: data.map(() => speedLimit),
+                    borderColor: '#000000',
+                    borderDash: [8, 4],
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    fill: false
+                });
+            }
+            return {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    ...baseOptions,
+                    scales: {
+                        ...baseOptions.scales,
+                        y: { ...baseOptions.scales.y, title: { display: true, text: 'Speed (mph)', font: { size: 13 } } }
+                    }
+                }
+            };
+
+        case 'avg-vs-85th':
+            const avgDs = [{
+                label: 'Average Speed',
+                data: data.map(d => d.avg_speed),
+                backgroundColor: CHART_COLORS.avgSpeed,
+                borderRadius: 4
+            }];
+            if (data.some(d => d.p85)) {
+                avgDs.push({
+                    label: '85th Percentile',
+                    data: data.map(d => d.p85 || 0),
+                    backgroundColor: CHART_COLORS.percentile85,
+                    borderRadius: 4
+                });
+            }
+            return {
+                type: 'bar',
+                data: { labels, datasets: avgDs },
+                options: {
+                    ...baseOptions,
+                    scales: {
+                        ...baseOptions.scales,
+                        y: { ...baseOptions.scales.y, title: { display: true, text: 'Speed (mph)', font: { size: 13 } } }
+                    }
+                }
+            };
+
+        case 'volume-only':
+            return {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Vehicles',
+                        data: data.map(d => d.vehicles),
+                        backgroundColor: CHART_COLORS.volume,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    ...baseOptions,
+                    scales: {
+                        ...baseOptions.scales,
+                        y: { ...baseOptions.scales.y, beginAtZero: true, title: { display: true, text: 'Vehicles', font: { size: 13 } } }
+                    },
+                    plugins: {
+                        ...baseOptions.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            anchor: 'end',
+                            align: 'top',
+                            font: { size: 11, weight: 'bold' },
+                            color: CHART_COLORS.volume
+                        } : { display: false }
+                    }
+                }
+            };
+
+        default:
+            return { type: 'bar', data: { labels, datasets: [] }, options: baseOptions };
+    }
+}
+
+/**
+ * Draw report header on PDF page (matching original program format)
+ */
+async function drawReportHeader(doc, studyMeta, stats, item, logoDataUrl, pageWidth, isFirstPage) {
+    const logoSize = 18;
+    const leftMargin = 10;
+    const textStartX = logoDataUrl ? leftMargin + logoSize + 5 : leftMargin;
+
+    // Draw logo if available
+    if (logoDataUrl) {
+        try {
+            doc.addImage(logoDataUrl, 'PNG', leftMargin, 6, logoSize, logoSize);
+        } catch (e) {
+            console.warn('Failed to add logo to PDF:', e);
+        }
+    }
+
+    // Title line
+    const titleText = studyMeta
+        ? `Traffic Study Report: ${studyMeta.location}${studyMeta.direction ? ' - ' + studyMeta.direction : ''}${isFirstPage ? '' : ' (continued)'}`
+        : (elements.reportTitle.value || 'Traffic Study Report') + (isFirstPage ? '' : ' (continued)');
+
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+    doc.text(titleText, textStartX, 14);
+    doc.setFont(undefined, 'normal');
+
+    if (isFirstPage && studyMeta && item) {
+        // Date range line
+        let dateRange = '';
+        if (item.useFullRange && studyMeta.date_range) {
+            dateRange = studyMeta.date_range;
+        } else if (item.startDate && item.endDate) {
+            const start = new Date(item.startDate);
+            const end = new Date(item.endDate);
+            dateRange = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+        }
+
+        doc.setFontSize(9);
+        doc.setTextColor(68, 68, 68);
+        const detailsLine = `Date Range: ${dateRange}   •   Counter: ${studyMeta.counter_number || '-'}   •   Speed Limit: ${studyMeta.speed_limit || '-'} mph`;
+        doc.text(detailsLine, textStartX, 20);
+
+        // Stats line (blue, bold)
+        if (stats) {
+            doc.setFontSize(9);
+            doc.setTextColor(44, 82, 130);
+            doc.setFont(undefined, 'bold');
+            let statsLine = `Study Totals:  Vehicles: ${stats.totalVehicles.toLocaleString()}`;
+            statsLine += `   •   Violators: ${stats.totalViolators.toLocaleString()} (${stats.violationRate.toFixed(1)}%)`;
+            if (stats.avgSpeed > 0) {
+                statsLine += `   •   Avg Speed: ${stats.avgSpeed.toFixed(1)} mph`;
+            }
+            if (stats.p85Speed) {
+                statsLine += `   •   85th Percentile: ${Math.round(stats.p85Speed)} mph`;
+            }
+            doc.text(statsLine, textStartX, 26);
+            doc.setFont(undefined, 'normal');
+        }
+
+        // Separator line
+        doc.setDrawColor(170, 170, 170);
+        doc.setLineWidth(0.4);
+        doc.line(leftMargin, 30, pageWidth - leftMargin, 30);
+    } else {
+        // Continuation page - just separator
+        doc.setDrawColor(170, 170, 170);
+        doc.setLineWidth(0.4);
+        doc.line(leftMargin, 22, pageWidth - leftMargin, 22);
+    }
+}
+
+// Auto-add current study chart when switching to reports tab
+function updateReportPanel() {
+    // If no items and we have a current study, suggest adding it
+    if (reportItems.length === 0 && currentStudy) {
+        // Don't auto-add, just let user know they can add
+    }
+}
+
+// ============ Theme ============
+
+function setTheme(dark) {
+    isDarkTheme = dark;
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    storage.set('theme', dark ? 'dark' : 'light');
+    updateChartTheme(dark);
+}
+
+// ============ Utilities ============
+
+function showLoading(message = 'Loading...') {
+    elements.loadingMessage.textContent = message;
+    elements.loadingOverlay.style.display = 'flex';
+}
+
+function hideLoading() {
+    elements.loadingOverlay.style.display = 'none';
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ============ Start ============
+init();

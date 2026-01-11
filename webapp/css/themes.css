@@ -1,0 +1,95 @@
+/* ========= Light Theme (Default) ========= */
+:root {
+    /* Backgrounds */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-hover: #f0f0f0;
+
+    /* Text */
+    --text-primary: #1a1a1a;
+    --text-secondary: #666666;
+    --text-muted: #999999;
+
+    /* Borders */
+    --border-color: #e0e0e0;
+
+    /* Accent */
+    --accent-primary: #5470C6;
+    --accent-hover: #4060b0;
+    --accent-bg: rgba(84, 112, 198, 0.1);
+
+    /* Status Colors */
+    --error-bg: #fee2e2;
+    --error-text: #dc2626;
+    --success-bg: #dcfce7;
+    --success-text: #16a34a;
+    --info-bg: #dbeafe;
+    --info-text: #2563eb;
+
+    /* Chart Colors */
+    --chart-law-abiding: #5470C6;
+    --chart-violators: #EE6666;
+    --chart-avg-speed: #91CC75;
+    --chart-peak-speed: #FAC858;
+    --chart-85th: #73C0DE;
+}
+
+/* ========= Dark Theme ========= */
+[data-theme="dark"] {
+    /* Backgrounds */
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #2d2d2d;
+    --bg-hover: #3a3a3a;
+
+    /* Text */
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --text-muted: #707070;
+
+    /* Borders */
+    --border-color: #404040;
+
+    /* Accent - slightly brighter for dark mode */
+    --accent-primary: #6b8dd6;
+    --accent-hover: #7a9ce5;
+    --accent-bg: rgba(107, 141, 214, 0.15);
+
+    /* Status Colors - adjusted for dark mode */
+    --error-bg: #3b1515;
+    --error-text: #f87171;
+    --success-bg: #14301d;
+    --success-text: #4ade80;
+    --info-bg: #1e2a3d;
+    --info-text: #60a5fa;
+}
+
+/* ========= Dark Mode Leaflet Adjustments ========= */
+[data-theme="dark"] .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85);
+}
+
+[data-theme="dark"] .leaflet-control-zoom a {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .leaflet-control-zoom a:hover {
+    background: var(--bg-hover);
+}
+
+[data-theme="dark"] .leaflet-popup-content-wrapper {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .leaflet-popup-tip {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .popup-info {
+    color: var(--text-secondary);
+}
+
+/* ========= Dark Mode Chart.js Adjustments ========= */
+/* Chart.js colors are handled in JavaScript */

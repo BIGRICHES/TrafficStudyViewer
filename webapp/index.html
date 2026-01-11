@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Study Viewer</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+    <!-- Leaflet MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css">
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/themes.css">
+</head>
+<body>
+    <!-- Browser Check Modal -->
+    <div id="browser-warning" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2>Unsupported Browser</h2>
+            <p>This application requires <strong>Chrome</strong> or <strong>Edge</strong> browser to access local files.</p>
+            <p>Please open this page in Chrome or Microsoft Edge to continue.</p>
+        </div>
+    </div>
+
+    <!-- Folder Selection Screen -->
+    <div id="folder-screen" class="screen">
+        <div class="folder-picker-container">
+            <h1>Traffic Study Viewer</h1>
+            <p class="subtitle">View traffic study data from your shared drive</p>
+
+            <div id="folder-status" class="folder-status"></div>
+
+            <button id="select-folder-btn" class="btn btn-primary btn-large">
+                Select Data Folder
+            </button>
+
+            <p class="help-text">
+                Select the folder containing your traffic study data<br>
+                (should contain study_index.csv and clean/ folder)
+            </p>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app-screen" class="screen" style="display: none;">
+        <!-- Header -->
+        <header class="app-header">
+            <h1 class="app-title">Traffic Study Viewer</h1>
+            <div class="header-actions">
+                <button id="change-folder-btn" class="btn-square" title="Change data folder">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </button>
+                <button id="theme-toggle-btn" class="btn-square" title="Toggle theme">
+                    <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="app-content">
+            <!-- Sidebar - Study Browser -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Studies</h2>
+                    <span id="study-count" class="badge">0</span>
+                </div>
+
+                <!-- Search -->
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="Search location...">
+                </div>
+
+                <!-- Filters -->
+                <div class="filters">
+                    <select id="filter-type" class="filter-select">
+                        <option value="">All Types</option>
+                        <option value="Radar">Radar</option>
+                        <option value="TimeMark Speed">TimeMark Speed</option>
+                        <option value="TimeMark Volume">TimeMark Volume</option>
+                        <option value="JAMAR Tube">JAMAR Tube</option>
+                    </select>
+                    <select id="filter-direction" class="filter-select">
+                        <option value="">All Directions</option>
+                        <option value="Northbound">Northbound</option>
+                        <option value="Southbound">Southbound</option>
+                        <option value="Eastbound">Eastbound</option>
+                        <option value="Westbound">Westbound</option>
+                    </select>
+                </div>
+
+                <!-- Study List -->
+                <div id="study-list" class="study-list">
+                    <div class="loading">Loading studies...</div>
+                </div>
+            </aside>
+
+            <!-- Main Panel -->
+            <main class="main-panel">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab active" data-tab="map">Map</button>
+                    <button class="tab" data-tab="charts">Charts</button>
+                    <button class="tab" data-tab="reports">Reports</button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    <!-- Map Tab -->
+                    <div id="map-tab" class="tab-pane active">
+                        <div class="map-controls">
+                            <select id="map-filter-type" class="control-select">
+                                <option value="">All Types</option>
+                                <option value="Radar">Radar</option>
+                                <option value="TimeMark Speed">TimeMark Speed</option>
+                                <option value="TimeMark Volume">TimeMark Volume</option>
+                                <option value="JAMAR Tube">JAMAR Tube</option>
+                            </select>
+                            <span id="map-study-count" class="badge">0 studies</span>
+                        </div>
+                        <div id="map-container"></div>
+                    </div>
+
+                    <!-- Charts Tab -->
+                    <div id="charts-tab" class="tab-pane">
+                        <div id="chart-placeholder" class="placeholder">
+                            <p>Select a study from the sidebar to view charts</p>
+                        </div>
+
+                        <div id="chart-container" style="display: none;">
+                            <!-- Study Info -->
+                            <div class="study-info">
+                                <h3 id="study-title">Study Title</h3>
+                                <div class="study-meta">
+                                    <span id="study-type-badge" class="type-badge">Type</span>
+                                    <span id="study-direction">Direction</span>
+                                    <span id="study-dates">Dates</span>
+                                    <span id="study-speed-limit">Speed Limit</span>
+                                </div>
+                            </div>
+
+                            <!-- Chart Controls -->
+                            <div class="chart-controls">
+                                <select id="chart-type-select" class="control-select">
+                                    <option value="vehicles-violators">Vehicles & Violators</option>
+                                    <option value="pct-speeders">% Speeders</option>
+                                    <option value="avg-peak-speeds">Average & Peak Speeds</option>
+                                    <option value="avg-vs-85th">Avg vs 85th Percentile</option>
+                                    <option value="volume-only">Volume Only</option>
+                                </select>
+                                <select id="time-agg-select" class="control-select">
+                                    <option value="daily">Daily</option>
+                                    <option value="hourly">Hourly</option>
+                                </select>
+                                <div class="date-range-controls">
+                                    <label>From:</label>
+                                    <input type="date" id="chart-start-date" class="control-input">
+                                    <label>To:</label>
+                                    <input type="date" id="chart-end-date" class="control-input">
+                                </div>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="show-labels-check" checked>
+                                    Show Labels
+                                </label>
+                            </div>
+
+                            <!-- Chart Canvas -->
+                            <div class="chart-wrapper">
+                                <canvas id="main-chart"></canvas>
+                            </div>
+
+                            <!-- Statistics -->
+                            <div class="stats-panel">
+                                <h4>Statistics</h4>
+                                <div class="stats-grid">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Total Vehicles</span>
+                                        <span id="stat-total" class="stat-value">-</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Violators</span>
+                                        <span id="stat-violators" class="stat-value">-</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">% Speeders</span>
+                                        <span id="stat-pct" class="stat-value">-</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Avg Speed</span>
+                                        <span id="stat-avg-speed" class="stat-value">-</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">85th Percentile</span>
+                                        <span id="stat-85th" class="stat-value">-</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Peak Speed</span>
+                                        <span id="stat-peak" class="stat-value">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Reports Tab -->
+                    <div id="reports-tab" class="tab-pane">
+                        <div class="report-builder">
+                            <h3>Advanced Report Builder</h3>
+                            <p class="builder-help">Build custom reports by adding charts. Each chart can use a different study and have its own filters.</p>
+
+                            <!-- Report Title -->
+                            <div class="form-group">
+                                <label for="report-title">Report Title</label>
+                                <input type="text" id="report-title" placeholder="Traffic Study Report">
+                            </div>
+
+                            <!-- Report Items -->
+                            <div class="report-items-section">
+                                <div class="section-header">
+                                    <label>Report Contents</label>
+                                    <div class="section-header-buttons">
+                                        <button type="button" id="add-chart-btn" class="btn btn-small btn-primary">+ Add Chart</button>
+                                        <button type="button" id="add-table-btn" class="btn btn-small btn-secondary">+ Add Data Table</button>
+                                    </div>
+                                </div>
+                                <div id="report-items-list" class="report-items-list">
+                                    <p class="empty-list-message">No charts added. Click "Add Chart" to begin.</p>
+                                </div>
+                            </div>
+
+                            <!-- Layout Options -->
+                            <div class="form-row" style="margin-top: 1rem;">
+                                <div class="form-group form-group-inline">
+                                    <label>Charts per Page</label>
+                                    <select id="report-charts-per-page" class="control-select">
+                                        <option value="2">2</option>
+                                        <option value="1">1</option>
+                                    </select>
+                                </div>
+                                <div class="form-group form-group-inline">
+                                    <span id="page-count-display" class="page-count">Total pages: 0</span>
+                                </div>
+                            </div>
+
+                            <!-- Generate Button -->
+                            <div class="report-buttons">
+                                <button id="generate-report-btn" class="btn btn-primary" disabled>
+                                    Generate PDF Report
+                                </button>
+                            </div>
+                            <p id="report-status" class="help-text"></p>
+                        </div>
+
+                        <!-- Add/Edit Chart Modal -->
+                        <div id="chart-modal" class="modal" style="display: none;">
+                            <div class="modal-content modal-large">
+                                <div class="modal-header">
+                                    <h3 id="chart-modal-title">Add Chart</h3>
+                                    <button type="button" id="close-chart-modal" class="btn-close">&times;</button>
+                                </div>
+                                <div class="modal-body">
+                                    <!-- Study Selection -->
+                                    <div class="form-group">
+                                        <label>Study</label>
+                                        <div class="study-selector">
+                                            <input type="text" id="chart-study-search" class="control-input" placeholder="Search studies...">
+                                            <div id="chart-study-list" class="study-dropdown"></div>
+                                        </div>
+                                        <div id="chart-selected-study" class="selected-study-display">No study selected</div>
+                                    </div>
+
+                                    <!-- Chart Type -->
+                                    <div class="form-group">
+                                        <label>Chart Type</label>
+                                        <select id="chart-modal-type" class="control-select">
+                                            <option value="vehicles-violators">Vehicles & Violators</option>
+                                            <option value="pct-speeders">% Speeders</option>
+                                            <option value="avg-peak-speeds">Average & Peak Speeds</option>
+                                            <option value="avg-vs-85th">Avg vs 85th Percentile</option>
+                                            <option value="volume-only">Volume Only</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Time Aggregation -->
+                                    <div class="form-group">
+                                        <label>Time Aggregation</label>
+                                        <select id="chart-modal-time-agg" class="control-select">
+                                            <option value="daily">Daily</option>
+                                            <option value="hourly">Hourly</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Date Range -->
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="chart-modal-full-range" checked>
+                                            Use full study date range
+                                        </label>
+                                        <div id="chart-modal-date-range" class="report-date-range" style="display: none; margin-top: 0.5rem;">
+                                            <input type="date" id="chart-modal-start-date" class="control-input">
+                                            <span>to</span>
+                                            <input type="date" id="chart-modal-end-date" class="control-input">
+                                        </div>
+                                    </div>
+
+                                    <!-- Day of Week Filter -->
+                                    <div class="form-group">
+                                        <label>Days of Week</label>
+                                        <div class="day-filter">
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="1" checked><span>Mon</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="2" checked><span>Tue</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="3" checked><span>Wed</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="4" checked><span>Thu</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="5" checked><span>Fri</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="6" checked><span>Sat</span></label>
+                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="0" checked><span>Sun</span></label>
+                                        </div>
+                                        <div class="day-presets">
+                                            <button type="button" class="btn-link" id="modal-select-weekdays">Weekdays</button>
+                                            <button type="button" class="btn-link" id="modal-select-weekend">Weekend</button>
+                                            <button type="button" class="btn-link" id="modal-select-all-days">All</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Time of Day Filter -->
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="chart-modal-time-filter">
+                                            Filter by time of day
+                                        </label>
+                                        <div id="chart-modal-time-range" class="time-filter-inputs" style="display: none;">
+                                            <select id="chart-modal-time-start" class="control-select">
+                                                <option value="00:00">12:00 AM</option>
+                                                <option value="06:00">6:00 AM</option>
+                                                <option value="06:30">6:30 AM</option>
+                                                <option value="07:00" selected>7:00 AM</option>
+                                                <option value="08:00">8:00 AM</option>
+                                                <option value="09:00">9:00 AM</option>
+                                                <option value="12:00">12:00 PM</option>
+                                                <option value="14:00">2:00 PM</option>
+                                                <option value="15:00">3:00 PM</option>
+                                                <option value="16:00">4:00 PM</option>
+                                            </select>
+                                            <span>to</span>
+                                            <select id="chart-modal-time-end" class="control-select">
+                                                <option value="09:00">9:00 AM</option>
+                                                <option value="12:00">12:00 PM</option>
+                                                <option value="16:00">4:00 PM</option>
+                                                <option value="17:00">5:00 PM</option>
+                                                <option value="18:00" selected>6:00 PM</option>
+                                                <option value="18:30">6:30 PM</option>
+                                                <option value="19:00">7:00 PM</option>
+                                                <option value="21:00">9:00 PM</option>
+                                                <option value="23:59">11:59 PM</option>
+                                            </select>
+                                            <div class="time-presets">
+                                                <button type="button" class="btn-link" id="preset-school">School (7-9 AM)</button>
+                                                <button type="button" class="btn-link" id="preset-rush-am">Rush AM</button>
+                                                <button type="button" class="btn-link" id="preset-rush-pm">Rush PM</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Show Labels -->
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="chart-modal-show-labels" checked>
+                                            Show value labels on bars
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" id="cancel-chart-modal" class="btn btn-secondary">Cancel</button>
+                                    <button type="button" id="save-chart-modal" class="btn btn-primary">Add Chart</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add/Edit Data Table Modal -->
+                        <div id="table-modal" class="modal" style="display: none;">
+                            <div class="modal-content modal-large">
+                                <div class="modal-header">
+                                    <h3 id="table-modal-title">Add Data Table</h3>
+                                    <button type="button" id="close-table-modal" class="btn-close">&times;</button>
+                                </div>
+                                <div class="modal-body">
+                                    <!-- Study Selection -->
+                                    <div class="form-group">
+                                        <label>Study</label>
+                                        <div class="study-selector">
+                                            <input type="text" id="table-study-search" class="control-input" placeholder="Search studies...">
+                                            <div id="table-study-list" class="study-dropdown"></div>
+                                        </div>
+                                        <div id="table-selected-study" class="selected-study-display">No study selected</div>
+                                    </div>
+
+                                    <!-- Table Type -->
+                                    <div class="form-group">
+                                        <label>Table Type</label>
+                                        <select id="table-modal-type" class="control-select">
+                                            <option value="speed-summary">Speed Summary (24-Hour)</option>
+                                            <option value="volume-summary">Volume Summary (24-Hour)</option>
+                                            <option value="daily-speed-bins">Daily Speed Bins</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Date Range -->
+                                    <div class="form-group">
+                                        <label>Date Range</label>
+                                        <div class="table-date-range">
+                                            <div class="date-inputs">
+                                                <label>Start:</label>
+                                                <input type="date" id="table-modal-start-date" class="control-input">
+                                                <label>End:</label>
+                                                <input type="date" id="table-modal-end-date" class="control-input">
+                                            </div>
+                                            <button type="button" id="table-full-range-btn" class="btn btn-small btn-secondary">Full Study</button>
+                                        </div>
+                                        <div id="table-page-count" class="table-page-count">(0 pages)</div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" id="cancel-table-modal" class="btn btn-secondary">Cancel</button>
+                                    <button type="button" id="save-table-modal" class="btn btn-primary">Add Table</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Loading...</p>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+    <!-- App Modules -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

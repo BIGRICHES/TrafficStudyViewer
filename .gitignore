@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# Except webapp folder
+!webapp/
+!webapp/**
+
+# And .gitignore itself
+!.gitignore
