@@ -308,10 +308,17 @@ async function handleChangeFolder() {
         const handle = await fileSystem.requestFolderAccess();
 
         if (!handle) {
+            // User cancelled - show folder selection screen
+            elements.appScreen.style.display = 'none';
+            elements.folderScreen.style.display = 'flex';
+            elements.folderStatus.textContent = 'Please select a data folder';
+            elements.folderStatus.className = 'folder-status info';
+            elements.selectFolderBtn.textContent = 'Select Data Folder';
             hideLoading();
             return;
         }
 
+        // Clean up existing map
         if (map) {
             map.remove();
             map = null;
@@ -323,7 +330,10 @@ async function handleChangeFolder() {
 
     } catch (error) {
         console.error('Error changing folder:', error);
-        alert(`Error: ${error.message}`);
+        elements.appScreen.style.display = 'none';
+        elements.folderScreen.style.display = 'flex';
+        elements.folderStatus.textContent = `Error: ${error.message}`;
+        elements.folderStatus.className = 'folder-status error';
         hideLoading();
     }
 }
