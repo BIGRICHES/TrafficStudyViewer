@@ -7,9 +7,9 @@ import * as storage from './services/storage.js';
 import * as studyIndex from './services/studyIndex.js';
 import { createChart, destroyChart, updateChartTheme } from './charts/chartFactory.js';
 import { calculateStats, formatNumber, formatDecimal, calculateReportStatistics, aggregateDaily, aggregateHourly } from './utils/stats.js';
-import { renderSpeedSummaryTable, renderVolumeSummaryTable, renderDailySpeedBinsTable } from './tables/tableRenderer.js';
 import { formatDateRange, formatDate } from './utils/dateUtils.js';
-import { MARKER_COLORS, MAP_CENTER, VOLUME_STUDY_TYPES, DATA_TABLE_TYPES, CHART_COLORS } from './config.js';
+import { MARKER_COLORS, MAP_CENTER, VOLUME_STUDY_TYPES, DATA_TABLE_TYPES, CHART_COLORS, CHART_TYPES } from './config.js';
+import * as pdfGen from './pdf/pdfGenerator.js';
 
 // ============ Utilities ============
 
@@ -1478,15 +1478,6 @@ async function generateReport() {
 
     elements.reportStatus.textContent = 'Generating report...';
 
-    // Create high-resolution off-screen canvas for charts
-    // Aspect ratio should match PDF placement: 190mm wide x 115mm (1 chart) or 58mm (2 charts)
-    // For best results, use wider aspect ratio that works for both layouts
-    const pdfCanvas = document.createElement('canvas');
-    const pdfCtx = pdfCanvas.getContext('2d');
-    const SCALE = 2; // 2x resolution for crisp PDF
-    pdfCanvas.width = 1900 * SCALE;   // Width for PDF
-    pdfCanvas.height = 1000 * SCALE;  // Height proportional for good chart display
-
     try {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'letter');
@@ -1499,24 +1490,47 @@ async function generateReport() {
         const chartItems = reportItems.filter(item => item.type !== 'table');
         const tableItems = reportItems.filter(item => item.type === 'table');
 
-        // Get first study info for header (if charts exist)
+        // Get first study info for header
         let firstStudy = null;
         let overallStats = null;
+        let firstItem = null;
+
         if (chartItems.length > 0) {
             firstStudy = chartItems[0].studyMeta;
-            // Calculate overall stats from first chart's data
+            firstItem = chartItems[0];
             const firstData = await studyIndex.loadStudyData(chartItems[0].studyId);
             const firstFiltered = filterDataForItem(firstData, chartItems[0]);
-            overallStats = calculateReportStatistics(firstFiltered);
+            overallStats = pdfGen.calculateReportStatistics(firstFiltered);
         }
 
-        let currentPage = 1;
+        // Calculate date range for header
+        let dateRangeStr = '';
+        if (firstItem) {
+            if (firstItem.useFullRange && firstStudy.date_range) {
+                dateRangeStr = firstStudy.date_range;
+            } else if (firstItem.startDate && firstItem.endDate) {
+                const start = new Date(firstItem.startDate);
+                const end = new Date(firstItem.endDate);
+                dateRangeStr = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+            }
+        }
+
         let chartY = chartsPerPage === 1 ? 38 : 36;
         let chartsOnPage = 0;
-        let isFirstPage = true;
 
-        // Draw report header on first page
-        await drawReportHeader(doc, firstStudy, overallStats, chartItems[0], logoDataUrl, pageWidth, true);
+        // Draw header on first page
+        if (chartItems.length > 0) {
+            pdfGen.drawHeader(doc, {
+                logoDataUrl,
+                location: firstStudy?.location,
+                direction: firstStudy?.direction,
+                dateRange: dateRangeStr,
+                counter: firstStudy?.counter_number,
+                speedLimit: firstStudy?.speed_limit,
+                stats: overallStats,
+                isFirstPage: true
+            });
+        }
 
         // Process chart items
         for (let i = 0; i < chartItems.length; i++) {
@@ -1531,32 +1545,50 @@ async function generateReport() {
                 continue;
             }
 
-            const chartHeight = chartsPerPage === 1 ? 115 : 58;
-            const chartSpacing = chartsPerPage === 1 ? 125 : 68;
+            // Aggregate data
+            const aggregatedData = item.timeAgg === 'hourly'
+                ? pdfGen.aggregateHourly(filteredData)
+                : pdfGen.aggregateDaily(filteredData);
+
+            if (aggregatedData.length === 0) continue;
+
+            const chartHeight = chartsPerPage === 1 ? 110 : 55;
+            const chartSpacing = chartsPerPage === 1 ? 120 : 62;
 
             // Check if need new page
             if (chartsOnPage >= chartsPerPage) {
                 doc.addPage();
-                currentPage++;
-                chartY = 28;
+                chartY = 26;
                 chartsOnPage = 0;
-                isFirstPage = false;
-                // Draw header on continuation pages
-                await drawReportHeader(doc, item.studyMeta, null, item, logoDataUrl, pageWidth, false);
+
+                // Continuation header
+                pdfGen.drawHeader(doc, {
+                    logoDataUrl,
+                    location: item.studyMeta?.location,
+                    direction: item.studyMeta?.direction,
+                    isContinuation: true
+                });
             }
 
-            // Render chart to high-res canvas
-            const chartImgData = await renderChartToCanvas(pdfCanvas, item, filteredData, SCALE);
+            // Build chart title
+            const chartTitle = `${item.studyMeta.location}${item.studyMeta.direction ? ' (' + item.studyMeta.direction + ')' : ''} - ${CHART_TYPE_NAMES[item.chartType]}`;
 
-            if (chartImgData) {
-                doc.addImage(chartImgData, 'PNG', 10, chartY, 190, chartHeight);
-            }
+            // Draw chart using vector graphics
+            pdfGen.drawChartByType(doc, item.chartType, aggregatedData, {
+                x: 10,
+                y: chartY,
+                width: pageWidth - 20,
+                height: chartHeight,
+                title: chartTitle,
+                speedLimit: item.studyMeta.speed_limit || 0,
+                showLabels: item.showLabels
+            });
 
             chartY += chartSpacing;
             chartsOnPage++;
         }
 
-        // Process table items - each table gets its own page(s)
+        // Process table items
         for (let i = 0; i < tableItems.length; i++) {
             const item = tableItems[i];
             const tableType = item.tableType;
@@ -1567,9 +1599,8 @@ async function generateReport() {
 
             if (tableType === 'daily-speed-bins') {
                 doc.addPage();
-                currentPage++;
-
-                const tableCanvas = renderDailySpeedBinsTable(
+                pdfGen.generateDailySpeedBinsTable(
+                    doc,
                     studyData,
                     item.startDate,
                     item.endDate,
@@ -1577,24 +1608,17 @@ async function generateReport() {
                     item.studyMeta,
                     logoDataUrl
                 );
-
-                const imgData = tableCanvas.toDataURL('image/png', 1.0);
-                // Full page width, good height for landscape-style table
-                doc.addImage(imgData, 'PNG', 5, 8, pageWidth - 10, pageHeight - 20);
-
             } else {
                 const startDate = new Date(item.startDate);
                 const endDate = new Date(item.endDate);
 
                 for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
                     const dateStr = d.toISOString().split('T')[0];
-
                     doc.addPage();
-                    currentPage++;
 
-                    let tableCanvas;
                     if (tableType === 'speed-summary') {
-                        tableCanvas = renderSpeedSummaryTable(
+                        pdfGen.generateSpeedSummaryTable(
+                            doc,
                             studyData,
                             dateStr,
                             item.studyMeta.speed_limit || 25,
@@ -1602,17 +1626,14 @@ async function generateReport() {
                             logoDataUrl
                         );
                     } else {
-                        tableCanvas = renderVolumeSummaryTable(
+                        pdfGen.generateVolumeSummaryTable(
+                            doc,
                             studyData,
                             dateStr,
                             item.studyMeta,
                             logoDataUrl
                         );
                     }
-
-                    const imgData = tableCanvas.toDataURL('image/png', 1.0);
-                    // Full page coverage for 24-hour tables
-                    doc.addImage(imgData, 'PNG', 5, 8, pageWidth - 10, pageHeight - 20);
                 }
             }
         }
@@ -1635,7 +1656,7 @@ async function generateReport() {
         }
 
         // Filename with date prefix
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '-');
+        const dateStr = new Date().toISOString().slice(0, 10);
         const reportTitle = elements.reportTitle.value || 'Traffic Study Report';
         const fileName = `(${dateStr}) ${reportTitle.replace(/[^a-z0-9 ]/gi, '').substring(0, 50)}.pdf`;
 
@@ -1647,352 +1668,6 @@ async function generateReport() {
         elements.reportStatus.textContent = `Error: ${error.message}`;
     } finally {
         elements.generateReportBtn.disabled = reportItems.length === 0;
-    }
-}
-
-/**
- * Render a chart to a high-resolution canvas for PDF
- */
-async function renderChartToCanvas(canvas, item, filteredData, scale) {
-    const ctx = canvas.getContext('2d');
-
-    // Clear canvas
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // IMPORTANT: Aggregate data just like chartFactory.js does
-    const aggregatedData = item.timeAgg === 'hourly'
-        ? aggregateHourly(filteredData)
-        : aggregateDaily(filteredData);
-
-    if (aggregatedData.length === 0) {
-        console.warn('No aggregated data for chart');
-        return null;
-    }
-
-    // Get chart config with aggregated data
-    const chartTitle = `${item.studyMeta.location}${item.studyMeta.direction ? ' (' + item.studyMeta.direction + ')' : ''} - ${CHART_TYPE_NAMES[item.chartType]}`;
-    const config = getChartConfigForPDF(item.chartType, aggregatedData, {
-        showLabels: item.showLabels,
-        speedLimit: item.studyMeta.speed_limit || 0,
-        title: chartTitle
-    });
-
-    // Override options for PDF rendering
-    config.options = {
-        ...config.options,
-        responsive: false,
-        maintainAspectRatio: false,
-        devicePixelRatio: scale,
-        animation: false
-    };
-
-    // Create chart
-    const tempChart = new Chart(ctx, config);
-
-    // Wait for render
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    const imgData = canvas.toDataURL('image/png', 1.0);
-
-    tempChart.destroy();
-
-    return imgData;
-}
-
-/**
- * Get Chart.js config formatted for PDF export
- */
-function getChartConfigForPDF(chartType, data, options = {}) {
-    const { showLabels = true, speedLimit = 0, title = '' } = options;
-    const labels = data.map(d => d.label);
-
-    const baseOptions = {
-        responsive: false,
-        maintainAspectRatio: false,
-        animation: false,
-        layout: {
-            padding: {
-                top: 10,
-                right: 20,
-                bottom: 10,
-                left: 20
-            }
-        },
-        plugins: {
-            legend: {
-                position: 'top',
-                labels: {
-                    font: { size: 24, weight: 'bold' },
-                    usePointStyle: true,
-                    padding: 30,
-                    boxWidth: 20,
-                    boxHeight: 20
-                }
-            },
-            title: {
-                display: true,
-                text: title,
-                font: { size: 32, weight: 'bold' },
-                padding: { top: 10, bottom: 20 }
-            }
-        },
-        scales: {
-            x: {
-                grid: { display: false },
-                ticks: { font: { size: 20 }, maxRotation: 45, minRotation: 0 }
-            },
-            y: {
-                grid: { color: '#e0e0e0' },
-                ticks: { font: { size: 20 } },
-                title: { font: { size: 22 } }
-            }
-        }
-    };
-
-    switch (chartType) {
-        case 'vehicles-violators':
-            return {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [
-                        {
-                            label: 'Law-Abiding',
-                            data: data.map(d => d.non_speeders),
-                            backgroundColor: CHART_COLORS.lawAbiding,
-                            borderRadius: 4
-                        },
-                        {
-                            label: 'Violators',
-                            data: data.map(d => d.violators),
-                            backgroundColor: CHART_COLORS.violators,
-                            borderRadius: 4
-                        }
-                    ]
-                },
-                options: {
-                    ...baseOptions,
-                    scales: {
-                        ...baseOptions.scales,
-                        y: { ...baseOptions.scales.y, beginAtZero: true, title: { display: true, text: 'Count', font: { size: 13 } } }
-                    },
-                    plugins: {
-                        ...baseOptions.plugins,
-                        datalabels: showLabels ? {
-                            display: true,
-                            anchor: 'end',
-                            align: 'top',
-                            font: { size: 10, weight: 'bold' }
-                        } : { display: false }
-                    }
-                }
-            };
-
-        case 'pct-speeders':
-            return {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: '% Speeders',
-                        data: data.map(d => d.pct_speeders),
-                        backgroundColor: CHART_COLORS.percentile85,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    ...baseOptions,
-                    scales: {
-                        ...baseOptions.scales,
-                        y: {
-                            ...baseOptions.scales.y,
-                            beginAtZero: true,
-                            max: 100,
-                            title: { display: true, text: 'Percentage', font: { size: 13 } },
-                            ticks: { callback: v => v + '%', font: { size: 12 } }
-                        }
-                    }
-                }
-            };
-
-        case 'avg-peak-speeds':
-            const datasets = [
-                {
-                    label: 'Average',
-                    data: data.map(d => d.avg_speed),
-                    borderColor: CHART_COLORS.avgSpeed,
-                    backgroundColor: CHART_COLORS.avgSpeed + '60',
-                    fill: true,
-                    tension: 0.3,
-                    borderWidth: 2
-                },
-                {
-                    label: 'Peak',
-                    data: data.map(d => d.peak_speed),
-                    borderColor: CHART_COLORS.peakSpeed,
-                    backgroundColor: CHART_COLORS.peakSpeed + '60',
-                    fill: true,
-                    tension: 0.3,
-                    borderWidth: 2
-                }
-            ];
-            if (speedLimit > 0) {
-                datasets.push({
-                    label: `Limit (${speedLimit})`,
-                    data: data.map(() => speedLimit),
-                    borderColor: '#000000',
-                    borderDash: [8, 4],
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false
-                });
-            }
-            return {
-                type: 'line',
-                data: { labels, datasets },
-                options: {
-                    ...baseOptions,
-                    scales: {
-                        ...baseOptions.scales,
-                        y: { ...baseOptions.scales.y, title: { display: true, text: 'Speed (mph)', font: { size: 13 } } }
-                    }
-                }
-            };
-
-        case 'avg-vs-85th':
-            const avgDs = [{
-                label: 'Average Speed',
-                data: data.map(d => d.avg_speed),
-                backgroundColor: CHART_COLORS.avgSpeed,
-                borderRadius: 4
-            }];
-            if (data.some(d => d.p85)) {
-                avgDs.push({
-                    label: '85th Percentile',
-                    data: data.map(d => d.p85 || 0),
-                    backgroundColor: CHART_COLORS.percentile85,
-                    borderRadius: 4
-                });
-            }
-            return {
-                type: 'bar',
-                data: { labels, datasets: avgDs },
-                options: {
-                    ...baseOptions,
-                    scales: {
-                        ...baseOptions.scales,
-                        y: { ...baseOptions.scales.y, title: { display: true, text: 'Speed (mph)', font: { size: 13 } } }
-                    }
-                }
-            };
-
-        case 'volume-only':
-            return {
-                type: 'bar',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: 'Vehicles',
-                        data: data.map(d => d.vehicles),
-                        backgroundColor: CHART_COLORS.volume,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    ...baseOptions,
-                    scales: {
-                        ...baseOptions.scales,
-                        y: { ...baseOptions.scales.y, beginAtZero: true, title: { display: true, text: 'Vehicles', font: { size: 13 } } }
-                    },
-                    plugins: {
-                        ...baseOptions.plugins,
-                        datalabels: showLabels ? {
-                            display: true,
-                            anchor: 'end',
-                            align: 'top',
-                            font: { size: 11, weight: 'bold' },
-                            color: CHART_COLORS.volume
-                        } : { display: false }
-                    }
-                }
-            };
-
-        default:
-            return { type: 'bar', data: { labels, datasets: [] }, options: baseOptions };
-    }
-}
-
-/**
- * Draw report header on PDF page (matching original program format)
- */
-async function drawReportHeader(doc, studyMeta, stats, item, logoDataUrl, pageWidth, isFirstPage) {
-    const logoSize = 18;
-    const leftMargin = 10;
-    const textStartX = logoDataUrl ? leftMargin + logoSize + 5 : leftMargin;
-
-    // Draw logo if available
-    if (logoDataUrl) {
-        try {
-            doc.addImage(logoDataUrl, 'PNG', leftMargin, 6, logoSize, logoSize);
-        } catch (e) {
-            console.warn('Failed to add logo to PDF:', e);
-        }
-    }
-
-    // Title line
-    const titleText = studyMeta
-        ? `Traffic Study Report: ${studyMeta.location}${studyMeta.direction ? ' - ' + studyMeta.direction : ''}${isFirstPage ? '' : ' (continued)'}`
-        : (elements.reportTitle.value || 'Traffic Study Report') + (isFirstPage ? '' : ' (continued)');
-
-    doc.setFontSize(14);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, 'bold');
-    doc.text(titleText, textStartX, 14);
-    doc.setFont(undefined, 'normal');
-
-    if (isFirstPage && studyMeta && item) {
-        // Date range line
-        let dateRange = '';
-        if (item.useFullRange && studyMeta.date_range) {
-            dateRange = studyMeta.date_range;
-        } else if (item.startDate && item.endDate) {
-            const start = new Date(item.startDate);
-            const end = new Date(item.endDate);
-            dateRange = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
-        }
-
-        doc.setFontSize(9);
-        doc.setTextColor(68, 68, 68);
-        const detailsLine = `Date Range: ${dateRange}   •   Counter: ${studyMeta.counter_number || '-'}   •   Speed Limit: ${studyMeta.speed_limit || '-'} mph`;
-        doc.text(detailsLine, textStartX, 20);
-
-        // Stats line (blue, bold)
-        if (stats) {
-            doc.setFontSize(9);
-            doc.setTextColor(44, 82, 130);
-            doc.setFont(undefined, 'bold');
-            let statsLine = `Study Totals:  Vehicles: ${stats.totalVehicles.toLocaleString()}`;
-            statsLine += `   •   Violators: ${stats.totalViolators.toLocaleString()} (${stats.violationRate.toFixed(1)}%)`;
-            if (stats.avgSpeed > 0) {
-                statsLine += `   •   Avg Speed: ${stats.avgSpeed.toFixed(1)} mph`;
-            }
-            if (stats.p85Speed) {
-                statsLine += `   •   85th Percentile: ${Math.round(stats.p85Speed)} mph`;
-            }
-            doc.text(statsLine, textStartX, 26);
-            doc.setFont(undefined, 'normal');
-        }
-
-        // Separator line
-        doc.setDrawColor(170, 170, 170);
-        doc.setLineWidth(0.4);
-        doc.line(leftMargin, 30, pageWidth - leftMargin, 30);
-    } else {
-        // Continuation page - just separator
-        doc.setDrawColor(170, 170, 170);
-        doc.setLineWidth(0.4);
-        doc.line(leftMargin, 22, pageWidth - leftMargin, 22);
     }
 }
 
