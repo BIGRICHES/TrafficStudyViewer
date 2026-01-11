@@ -43,6 +43,7 @@ const elements = {
 
     // Folder picker
     selectFolderBtn: document.getElementById('select-folder-btn'),
+    clearFolderBtn: document.getElementById('clear-folder-btn'),
     changeFolderBtn: document.getElementById('change-folder-btn'),
     folderStatus: document.getElementById('folder-status'),
 
@@ -177,6 +178,7 @@ async function init() {
         elements.folderStatus.textContent = 'Click to reconnect to your data folder';
         elements.folderStatus.className = 'folder-status info';
         elements.selectFolderBtn.textContent = 'Reconnect to Folder';
+        elements.clearFolderBtn.style.display = 'inline-block';
     }
 
     hideLoading();
@@ -184,6 +186,7 @@ async function init() {
 
 function setupEventListeners() {
     elements.selectFolderBtn.addEventListener('click', handleFolderSelect);
+    elements.clearFolderBtn.addEventListener('click', handleClearAndSelectFolder);
     elements.changeFolderBtn.addEventListener('click', handleChangeFolder);
     elements.themeToggleBtn.addEventListener('click', () => setTheme(!isDarkTheme));
 
@@ -284,6 +287,36 @@ async function handleFolderSelect() {
         if (!handle) {
             handle = await fileSystem.requestFolderAccess();
         }
+
+        if (!handle) {
+            hideLoading();
+            return;
+        }
+
+        await loadAndShowApp();
+
+    } catch (error) {
+        console.error('Error selecting folder:', error);
+        elements.folderStatus.textContent = `Error: ${error.message}`;
+        elements.folderStatus.className = 'folder-status error';
+        hideLoading();
+    }
+}
+
+async function handleClearAndSelectFolder() {
+    showLoading('Clearing saved folder...');
+
+    try {
+        await fileSystem.clearStoredHandle();
+
+        // Reset UI
+        elements.folderStatus.textContent = '';
+        elements.folderStatus.className = 'folder-status';
+        elements.selectFolderBtn.textContent = 'Select Data Folder';
+        elements.clearFolderBtn.style.display = 'none';
+
+        // Now request new folder
+        const handle = await fileSystem.requestFolderAccess();
 
         if (!handle) {
             hideLoading();
