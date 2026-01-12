@@ -122,6 +122,7 @@
                     <button class="tab active" data-tab="map">Map</button>
                     <button class="tab" data-tab="charts">Charts</button>
                     <button class="tab" data-tab="reports">Reports</button>
+                    <button class="tab" data-tab="pending">Pending</button>
                 </div>
 
                 <!-- Tab Content -->
@@ -380,6 +381,103 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Pending Studies Tab -->
+                    <div id="pending-tab" class="tab-pane">
+                        <div class="pending-studies">
+                            <div class="pending-header">
+                                <h3>Pending Studies</h3>
+                                <button type="button" id="add-pending-btn" class="btn btn-primary">
+                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                        <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2z"/>
+                                    </svg>
+                                    Add Study
+                                </button>
+                            </div>
+
+                            <!-- Filter Tabs -->
+                            <div class="pending-filters">
+                                <button class="filter-btn active" data-filter="all">All</button>
+                                <button class="filter-btn" data-filter="pending">Pending</button>
+                                <button class="filter-btn" data-filter="in-progress">In Progress</button>
+                                <button class="filter-btn" data-filter="complete">Complete</button>
+                            </div>
+
+                            <!-- Pending Studies List -->
+                            <div id="pending-list" class="pending-list">
+                                <div class="pending-empty">
+                                    <p>No pending studies yet.</p>
+                                    <p class="help-text">Click "Add Study" to track a new study request.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Add/Edit Pending Study Modal -->
+                        <div id="pending-modal" class="modal" style="display: none;">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h3 id="pending-modal-title">Add Pending Study</h3>
+                                    <button type="button" id="close-pending-modal" class="btn-close">&times;</button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="form-group">
+                                        <label for="pending-location">Location <span class="required">*</span></label>
+                                        <input type="text" id="pending-location" class="control-input" placeholder="e.g., Main St & Oak Ave" required>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Study Type <span class="required">*</span></label>
+                                        <div class="button-group" id="pending-type-group">
+                                            <button type="button" class="type-btn" data-value="Radar">Radar</button>
+                                            <button type="button" class="type-btn" data-value="TimeMark Tube">TimeMark Tube</button>
+                                            <button type="button" class="type-btn" data-value="Jamar Tube">Jamar Tube</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="pending-requested-by">Requested By</label>
+                                            <input type="text" id="pending-requested-by" class="control-input" placeholder="Name or department">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="pending-date">Date Requested</label>
+                                            <input type="date" id="pending-date" class="control-input">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Priority</label>
+                                        <div class="button-group" id="pending-priority-group">
+                                            <button type="button" class="priority-btn" data-value="low">Low</button>
+                                            <button type="button" class="priority-btn active" data-value="normal">Normal</button>
+                                            <button type="button" class="priority-btn" data-value="high">High</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Status</label>
+                                        <div class="button-group" id="pending-status-group">
+                                            <button type="button" class="status-btn active" data-value="pending">Pending</button>
+                                            <button type="button" class="status-btn" data-value="in-progress">In Progress</button>
+                                            <button type="button" class="status-btn" data-value="complete">Complete</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="pending-notes">Notes</label>
+                                        <textarea id="pending-notes" class="control-textarea" rows="3" placeholder="Additional details..."></textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" id="delete-pending-btn" class="btn btn-danger" style="display: none;">Delete</button>
+                                    <div class="modal-footer-right">
+                                        <button type="button" id="cancel-pending-modal" class="btn btn-secondary">Cancel</button>
+                                        <button type="button" id="save-pending-modal" class="btn btn-primary">Save</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>
@@ -401,6 +499,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- App Modules -->
-    <script type="module" src="js/app.js?v=10"></script>
+    <script type="module" src="js/app.js?v=11"></script>
 </body>
 </html>

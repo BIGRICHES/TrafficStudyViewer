@@ -23,7 +23,7 @@ export function isSupported() {
 export async function requestFolderAccess() {
     try {
         const handle = await window.showDirectoryPicker({
-            mode: 'read'
+            mode: 'readwrite'
         });
 
         // Store the handle for later
@@ -63,8 +63,8 @@ export async function restoreAccess(requestPermission = false) {
         const handle = await storage.get(FOLDER_HANDLE_KEY);
         if (!handle) return null;
 
-        // Check current permission
-        const permission = await handle.queryPermission({ mode: 'read' });
+        // Check current permission (readwrite for pending studies feature)
+        const permission = await handle.queryPermission({ mode: 'readwrite' });
 
         if (permission === 'granted') {
             currentFolderHandle = handle;
@@ -73,7 +73,7 @@ export async function restoreAccess(requestPermission = false) {
 
         if (requestPermission) {
             // Request permission (must be triggered by user gesture)
-            const result = await handle.requestPermission({ mode: 'read' });
+            const result = await handle.requestPermission({ mode: 'readwrite' });
             if (result === 'granted') {
                 currentFolderHandle = handle;
                 return handle;
@@ -237,6 +237,45 @@ export async function getFileInFolder(fileName) {
 
     try {
         return await currentFolderHandle.getFileHandle(fileName);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Write content to a file (creates if doesn't exist)
+ * @param {string} fileName - Name of the file in root folder
+ * @param {string} content - Content to write
+ * @returns {Promise<void>}
+ */
+export async function writeFile(fileName, content) {
+    if (!currentFolderHandle) {
+        throw new Error('No folder access. Please select a folder first.');
+    }
+
+    // Get or create the file handle
+    const fileHandle = await currentFolderHandle.getFileHandle(fileName, { create: true });
+
+    // Create a writable stream and write content
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+}
+
+/**
+ * Read a file from root folder, return null if doesn't exist
+ * @param {string} fileName - Name of the file
+ * @returns {Promise<string|null>}
+ */
+export async function readFileIfExists(fileName) {
+    if (!currentFolderHandle) {
+        return null;
+    }
+
+    try {
+        const fileHandle = await currentFolderHandle.getFileHandle(fileName);
+        const file = await fileHandle.getFile();
+        return await file.text();
     } catch {
         return null;
     }

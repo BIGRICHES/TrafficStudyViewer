@@ -122,6 +122,15 @@ body {
     background: #16a34a;
 }
 
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+}
+
 .btn-large {
     padding: 1rem 2rem;
     font-size: 1.1rem;
@@ -1180,4 +1189,356 @@ body {
 
 .popup-btn:hover {
     background: #4060b0;
+}
+
+/* ========= Pending Studies Tab ========= */
+.pending-studies {
+    max-width: 800px;
+}
+
+.pending-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.pending-header h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.pending-filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.filter-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.pending-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.pending-empty {
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 2px dashed var(--border-color);
+}
+
+.pending-empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+}
+
+.pending-empty p {
+    font-size: 0.95rem;
+}
+
+/* Pending Study Item Card */
+.pending-item {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: all 0.15s;
+}
+
+.pending-item:hover {
+    border-color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.pending-item.complete {
+    opacity: 0.6;
+    background: var(--bg-secondary);
+}
+
+.pending-item.complete .pending-item-location {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.pending-item-priority {
+    width: 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.pending-item-priority.low {
+    background: #94a3b8;
+}
+
+.pending-item-priority.normal {
+    background: #3b82f6;
+}
+
+.pending-item-priority.high {
+    background: #ef4444;
+}
+
+.pending-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.pending-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.pending-item-location {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+.pending-item-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.pending-item-status.pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.pending-item-status.in-progress {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.pending-item-status.complete {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.pending-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.pending-item-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.pending-item-notes {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.pending-item-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.pending-item-actions button {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+}
+
+.pending-item-actions button:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.pending-item-actions button.delete:hover {
+    border-color: var(--error-text);
+    color: var(--error-text);
+}
+
+/* ========= Pending Modal Form ========= */
+.button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.type-btn,
+.priority-btn,
+.status-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.type-btn:hover,
+.priority-btn:hover,
+.status-btn:hover {
+    border-color: var(--accent-primary);
+}
+
+.type-btn.active,
+.priority-btn.active,
+.status-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+/* Priority button colors when active */
+.priority-btn.active[data-value="low"] {
+    background: #94a3b8;
+    border-color: #94a3b8;
+}
+
+.priority-btn.active[data-value="normal"] {
+    background: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.priority-btn.active[data-value="high"] {
+    background: #ef4444;
+    border-color: #ef4444;
+}
+
+/* Status button colors when active */
+.status-btn.active[data-value="pending"] {
+    background: #f59e0b;
+    border-color: #f59e0b;
+}
+
+.status-btn.active[data-value="in-progress"] {
+    background: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.status-btn.active[data-value="complete"] {
+    background: #22c55e;
+    border-color: #22c55e;
+}
+
+.control-input {
+    width: 100%;
+}
+
+.control-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+}
+
+.control-textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.form-group .required {
+    color: var(--error-text);
+}
+
+.modal-footer-right {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+/* Pending modal specific footer with delete button */
+#pending-modal .modal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#pending-modal .modal-content {
+    max-width: 500px;
+    text-align: left;
+}
+
+/* Type badges in pending items */
+.pending-type-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.pending-type-badge.radar {
+    background: #5470C6;
+    color: white;
+}
+
+.pending-type-badge.timemark-tube {
+    background: #91CC75;
+    color: white;
+}
+
+.pending-type-badge.jamar-tube {
+    background: #EE6666;
+    color: white;
 }

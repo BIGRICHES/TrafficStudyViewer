@@ -134,7 +134,25 @@ const elements = {
     tableModalStartDate: document.getElementById('table-modal-start-date'),
     tableModalEndDate: document.getElementById('table-modal-end-date'),
     tableFullRangeBtn: document.getElementById('table-full-range-btn'),
-    tablePageCount: document.getElementById('table-page-count')
+    tablePageCount: document.getElementById('table-page-count'),
+
+    // Pending Studies
+    addPendingBtn: document.getElementById('add-pending-btn'),
+    pendingList: document.getElementById('pending-list'),
+    pendingFilters: document.querySelectorAll('.pending-filters .filter-btn'),
+    pendingModal: document.getElementById('pending-modal'),
+    pendingModalTitle: document.getElementById('pending-modal-title'),
+    closePendingModal: document.getElementById('close-pending-modal'),
+    cancelPendingModal: document.getElementById('cancel-pending-modal'),
+    savePendingModal: document.getElementById('save-pending-modal'),
+    deletePendingBtn: document.getElementById('delete-pending-btn'),
+    pendingLocation: document.getElementById('pending-location'),
+    pendingTypeGroup: document.getElementById('pending-type-group'),
+    pendingRequestedBy: document.getElementById('pending-requested-by'),
+    pendingDate: document.getElementById('pending-date'),
+    pendingPriorityGroup: document.getElementById('pending-priority-group'),
+    pendingStatusGroup: document.getElementById('pending-status-group'),
+    pendingNotes: document.getElementById('pending-notes')
 };
 
 // Report items state
@@ -147,6 +165,12 @@ let modalSelectedStudyMeta = null;
 let tableModalSelectedStudyId = null;
 let tableModalSelectedStudyMeta = null;
 let editingTableItemIndex = -1;
+
+// Pending studies state
+let pendingStudies = [];
+let editingPendingId = null;
+let pendingFilter = 'all';
+const PENDING_FILE = 'pending_studies.json';
 
 // ============ Initialization ============
 
@@ -254,6 +278,36 @@ function setupEventListeners() {
     if (elements.tableModalType) {
         elements.tableModalType.addEventListener('change', onTableTypeChange);
     }
+
+    // Pending Studies
+    if (elements.addPendingBtn) {
+        elements.addPendingBtn.addEventListener('click', openAddPendingModal);
+    }
+    if (elements.closePendingModal) {
+        elements.closePendingModal.addEventListener('click', closePendingModal);
+    }
+    if (elements.cancelPendingModal) {
+        elements.cancelPendingModal.addEventListener('click', closePendingModal);
+    }
+    if (elements.savePendingModal) {
+        elements.savePendingModal.addEventListener('click', savePendingStudy);
+    }
+    if (elements.deletePendingBtn) {
+        elements.deletePendingBtn.addEventListener('click', deletePendingStudy);
+    }
+
+    // Pending filter buttons
+    elements.pendingFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+            elements.pendingFilters.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            pendingFilter = btn.dataset.filter;
+            renderPendingList();
+        });
+    });
+
+    // Button group toggle handlers (type, priority, status)
+    setupButtonGroupToggles();
 }
 
 // ============ Folder Handling ============
@@ -379,6 +433,9 @@ async function loadAndShowApp() {
 
     // Initialize map immediately since it's the default tab
     setTimeout(() => initMap(), 100);
+
+    // Load pending studies
+    await loadPendingStudies();
 
     hideLoading();
 }
@@ -1701,6 +1758,259 @@ function updateReportPanel() {
     // If no items and we have a current study, suggest adding it
     if (reportItems.length === 0 && currentStudy) {
         // Don't auto-add, just let user know they can add
+    }
+}
+
+// ============ Pending Studies ============
+
+function setupButtonGroupToggles() {
+    // Type buttons
+    if (elements.pendingTypeGroup) {
+        elements.pendingTypeGroup.querySelectorAll('.type-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                elements.pendingTypeGroup.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+    }
+
+    // Priority buttons
+    if (elements.pendingPriorityGroup) {
+        elements.pendingPriorityGroup.querySelectorAll('.priority-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                elements.pendingPriorityGroup.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+    }
+
+    // Status buttons
+    if (elements.pendingStatusGroup) {
+        elements.pendingStatusGroup.querySelectorAll('.status-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                elements.pendingStatusGroup.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+    }
+}
+
+async function loadPendingStudies() {
+    try {
+        const content = await fileSystem.readFileIfExists(PENDING_FILE);
+        if (content) {
+            pendingStudies = JSON.parse(content);
+        } else {
+            pendingStudies = [];
+        }
+    } catch (error) {
+        console.error('Error loading pending studies:', error);
+        pendingStudies = [];
+    }
+    renderPendingList();
+}
+
+async function savePendingStudiesToFile() {
+    try {
+        const content = JSON.stringify(pendingStudies, null, 2);
+        await fileSystem.writeFile(PENDING_FILE, content);
+    } catch (error) {
+        console.error('Error saving pending studies:', error);
+        alert('Failed to save pending studies: ' + error.message);
+    }
+}
+
+function renderPendingList() {
+    if (!elements.pendingList) return;
+
+    // Filter and sort studies
+    let filtered = [...pendingStudies];
+
+    // Apply status filter
+    if (pendingFilter !== 'all') {
+        filtered = filtered.filter(s => s.status === pendingFilter);
+    }
+
+    // Sort: non-complete first by priority (high, normal, low), then complete at bottom
+    const priorityOrder = { high: 0, normal: 1, low: 2 };
+    filtered.sort((a, b) => {
+        // Complete items go to bottom
+        if (a.status === 'complete' && b.status !== 'complete') return 1;
+        if (b.status === 'complete' && a.status !== 'complete') return -1;
+
+        // Both complete or both not complete - sort by priority
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+    });
+
+    if (filtered.length === 0) {
+        const emptyMessage = pendingFilter === 'all'
+            ? 'No pending studies yet.'
+            : `No ${pendingFilter.replace('-', ' ')} studies.`;
+        elements.pendingList.innerHTML = `
+            <div class="pending-empty">
+                <p>${emptyMessage}</p>
+                <p class="help-text">Click "Add Study" to track a new study request.</p>
+            </div>
+        `;
+        return;
+    }
+
+    elements.pendingList.innerHTML = filtered.map(study => {
+        const statusClass = study.status;
+        const statusLabel = study.status === 'in-progress' ? 'In Progress'
+            : study.status.charAt(0).toUpperCase() + study.status.slice(1);
+
+        const typeClass = study.type.toLowerCase().replace(/\s+/g, '-');
+        const dateStr = study.dateRequested
+            ? new Date(study.dateRequested).toLocaleDateString()
+            : '';
+
+        return `
+            <div class="pending-item ${study.status === 'complete' ? 'complete' : ''}" data-id="${study.id}">
+                <div class="pending-item-priority ${study.priority}"></div>
+                <div class="pending-item-content">
+                    <div class="pending-item-header">
+                        <span class="pending-item-location">${escapeHtml(study.location)}</span>
+                        <span class="pending-item-status ${statusClass}">${statusLabel}</span>
+                    </div>
+                    <div class="pending-item-meta">
+                        <span class="pending-type-badge ${typeClass}">${study.type}</span>
+                        ${study.requestedBy ? `<span>By: ${escapeHtml(study.requestedBy)}</span>` : ''}
+                        ${dateStr ? `<span>Requested: ${dateStr}</span>` : ''}
+                    </div>
+                    ${study.notes ? `<div class="pending-item-notes">${escapeHtml(study.notes)}</div>` : ''}
+                </div>
+                <div class="pending-item-actions">
+                    <button onclick="window.editPendingStudy('${study.id}')" title="Edit">&#9998;</button>
+                    <button class="delete" onclick="window.quickDeletePending('${study.id}')" title="Delete">&times;</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openAddPendingModal() {
+    editingPendingId = null;
+    elements.pendingModalTitle.textContent = 'Add Pending Study';
+    elements.deletePendingBtn.style.display = 'none';
+    elements.savePendingModal.textContent = 'Add Study';
+
+    // Reset form
+    elements.pendingLocation.value = '';
+    elements.pendingRequestedBy.value = '';
+    elements.pendingDate.value = new Date().toISOString().slice(0, 10);
+    elements.pendingNotes.value = '';
+
+    // Reset button groups
+    resetButtonGroup(elements.pendingTypeGroup, null);
+    resetButtonGroup(elements.pendingPriorityGroup, 'normal');
+    resetButtonGroup(elements.pendingStatusGroup, 'pending');
+
+    elements.pendingModal.style.display = 'flex';
+}
+
+window.editPendingStudy = function(id) {
+    const study = pendingStudies.find(s => s.id === id);
+    if (!study) return;
+
+    editingPendingId = id;
+    elements.pendingModalTitle.textContent = 'Edit Pending Study';
+    elements.deletePendingBtn.style.display = 'inline-block';
+    elements.savePendingModal.textContent = 'Save Changes';
+
+    // Fill form
+    elements.pendingLocation.value = study.location;
+    elements.pendingRequestedBy.value = study.requestedBy || '';
+    elements.pendingDate.value = study.dateRequested || '';
+    elements.pendingNotes.value = study.notes || '';
+
+    // Set button groups
+    resetButtonGroup(elements.pendingTypeGroup, study.type);
+    resetButtonGroup(elements.pendingPriorityGroup, study.priority);
+    resetButtonGroup(elements.pendingStatusGroup, study.status);
+
+    elements.pendingModal.style.display = 'flex';
+};
+
+window.quickDeletePending = function(id) {
+    if (confirm('Delete this pending study?')) {
+        pendingStudies = pendingStudies.filter(s => s.id !== id);
+        savePendingStudiesToFile();
+        renderPendingList();
+    }
+};
+
+function resetButtonGroup(groupEl, activeValue) {
+    if (!groupEl) return;
+    const buttons = groupEl.querySelectorAll('button');
+    buttons.forEach(btn => {
+        btn.classList.remove('active');
+        if (activeValue && btn.dataset.value === activeValue) {
+            btn.classList.add('active');
+        }
+    });
+}
+
+function getButtonGroupValue(groupEl) {
+    if (!groupEl) return null;
+    const activeBtn = groupEl.querySelector('.active');
+    return activeBtn ? activeBtn.dataset.value : null;
+}
+
+function closePendingModal() {
+    elements.pendingModal.style.display = 'none';
+    editingPendingId = null;
+}
+
+async function savePendingStudy() {
+    const location = elements.pendingLocation.value.trim();
+    if (!location) {
+        alert('Location is required');
+        return;
+    }
+
+    const type = getButtonGroupValue(elements.pendingTypeGroup);
+    if (!type) {
+        alert('Please select a study type');
+        return;
+    }
+
+    const studyData = {
+        location,
+        type,
+        requestedBy: elements.pendingRequestedBy.value.trim(),
+        dateRequested: elements.pendingDate.value,
+        priority: getButtonGroupValue(elements.pendingPriorityGroup) || 'normal',
+        status: getButtonGroupValue(elements.pendingStatusGroup) || 'pending',
+        notes: elements.pendingNotes.value.trim()
+    };
+
+    if (editingPendingId) {
+        // Update existing
+        const index = pendingStudies.findIndex(s => s.id === editingPendingId);
+        if (index !== -1) {
+            pendingStudies[index] = { ...pendingStudies[index], ...studyData };
+        }
+    } else {
+        // Create new
+        studyData.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        studyData.createdAt = new Date().toISOString();
+        pendingStudies.push(studyData);
+    }
+
+    await savePendingStudiesToFile();
+    renderPendingList();
+    closePendingModal();
+}
+
+async function deletePendingStudy() {
+    if (!editingPendingId) return;
+
+    if (confirm('Are you sure you want to delete this pending study?')) {
+        pendingStudies = pendingStudies.filter(s => s.id !== editingPendingId);
+        await savePendingStudiesToFile();
+        renderPendingList();
+        closePendingModal();
     }
 }
 
