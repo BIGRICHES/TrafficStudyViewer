@@ -238,12 +238,12 @@ function parseRadarPercentiles(csvContent) {
                 }
             }
 
-            // Row +7 from header = 85th percentile (column 7)
+            // Row +7 from header = 85th percentile (column 6)
             const p85RowIdx = i + 7;
             if (p85RowIdx < lines.length) {
                 const p85Parts = lines[p85RowIdx].split(',').map(p => p.trim());
-                if (p85Parts.length > 7) {
-                    const val = parseFloat(p85Parts[7]);
+                if (p85Parts.length > 6) {
+                    const val = parseFloat(p85Parts[6]);
                     // Sanity check: should be a reasonable speed (1-100 mph)
                     if (!isNaN(val) && val >= 1 && val <= 100) {
                         p85 = val;

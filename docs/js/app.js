@@ -1831,15 +1831,21 @@ function renderPendingList() {
         filtered = filtered.filter(s => s.status === pendingFilter);
     }
 
-    // Sort: non-complete first by priority (high, normal, low), then complete at bottom
+    // Sort: non-complete first by priority (high, normal, low), then by date (earliest first), then complete at bottom
     const priorityOrder = { high: 0, normal: 1, low: 2 };
     filtered.sort((a, b) => {
         // Complete items go to bottom
         if (a.status === 'complete' && b.status !== 'complete') return 1;
         if (b.status === 'complete' && a.status !== 'complete') return -1;
 
-        // Both complete or both not complete - sort by priority
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
+        // Sort by priority first
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+
+        // Within same priority, sort by date requested (earliest first)
+        const dateA = a.dateRequested ? new Date(a.dateRequested) : new Date('9999-12-31');
+        const dateB = b.dateRequested ? new Date(b.dateRequested) : new Date('9999-12-31');
+        return dateA - dateB;
     });
 
     if (filtered.length === 0) {
