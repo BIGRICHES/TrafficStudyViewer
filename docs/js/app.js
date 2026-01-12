@@ -1882,7 +1882,10 @@ function renderPendingList() {
                 </div>
                 <div class="pending-item-actions">
                     <button onclick="window.editPendingStudy('${study.id}')" title="Edit">&#9998;</button>
-                    <button class="delete" onclick="window.quickDeletePending('${study.id}')" title="Delete">&times;</button>
+                    ${study.status !== 'complete'
+                        ? `<button class="complete" onclick="window.markPendingComplete('${study.id}')" title="Mark Complete">&#10003;</button>`
+                        : `<button class="undo" onclick="window.markPendingPending('${study.id}')" title="Mark Pending">&#8634;</button>`
+                    }
                 </div>
             </div>
         `;
@@ -1932,9 +1935,19 @@ window.editPendingStudy = function(id) {
     elements.pendingModal.style.display = 'flex';
 };
 
-window.quickDeletePending = function(id) {
-    if (confirm('Delete this pending study?')) {
-        pendingStudies = pendingStudies.filter(s => s.id !== id);
+window.markPendingComplete = function(id) {
+    const study = pendingStudies.find(s => s.id === id);
+    if (study) {
+        study.status = 'complete';
+        savePendingStudiesToFile();
+        renderPendingList();
+    }
+};
+
+window.markPendingPending = function(id) {
+    const study = pendingStudies.find(s => s.id === id);
+    if (study) {
+        study.status = 'pending';
         savePendingStudiesToFile();
         renderPendingList();
     }

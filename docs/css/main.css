@@ -1407,6 +1407,16 @@ body {
     color: var(--error-text);
 }
 
+.pending-item-actions button.complete:hover {
+    border-color: #22c55e;
+    color: #22c55e;
+}
+
+.pending-item-actions button.undo:hover {
+    border-color: #f59e0b;
+    color: #f59e0b;
+}
+
 /* ========= Pending Modal Form ========= */
 .button-group {
     display: flex;
