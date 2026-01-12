@@ -161,17 +161,17 @@ export async function loadRawData(studyId) {
 }
 
 /**
- * Extract daily 50th and 85th percentiles from raw Radar CSV file.
+ * Extract daily 85th percentile from raw Radar CSV file.
  *
- * The raw file encodes percentiles in the "Summary" column (column index 7)
- * at fixed row offsets from the header row:
- * - Row +6 from "Time" header = 50th percentile
- * - Row +7 from "Time" header = 85th percentile
+ * The raw file encodes the 85th percentile in the "Summary" column (column index 7)
+ * at row +6 from the "Time" header row.
+ *
+ * Note: 50th percentile is NOT available in raw summary data.
  *
  * These values are pre-calculated by the radar device firmware.
  *
  * @param {string} studyId
- * @returns {Promise<Object>} Dict mapping date string -> {p50, p85}
+ * @returns {Promise<Object>} Dict mapping date string -> {p50, p85} (p50 always 0)
  */
 export async function extractRadarPercentiles(studyId) {
     const study = getById(studyId);
@@ -200,6 +200,12 @@ export async function extractRadarPercentiles(studyId) {
 
 /**
  * Parse raw Radar CSV content to extract percentiles
+ *
+ * The raw file encodes the 85th percentile in the "Summary" column (column index 7)
+ * at row +6 from the header row.
+ *
+ * Note: 50th percentile is NOT available in raw summary data (always 0).
+ *
  * @param {string} csvContent
  * @returns {Object} Dict mapping date string -> {p50, p85}
  */
@@ -213,54 +219,48 @@ function parseRadarPercentiles(csvContent) {
         const line = lines[i];
         const parts = line.split(',').map(p => p.trim());
 
-        // Check for date line (e.g., "1/6/2025" or "01/06/2025")
-        // Date lines typically have the date in the first cell and may have other content
-        if (parts[0] && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(parts[0])) {
-            currentDate = parts[0];
+        // Check for "Period Statistics" row which contains the date
+        // Format: "Period Statistics,MM/DD/YYYY,..."
+        if (parts[0] && parts[0].includes('Period Statistics') && parts.length > 1) {
+            currentDate = parts[1];
+            continue;
         }
 
         // Look for the "Time" header row (first column is "Time" or "time")
-        if (currentDate && parts[0] && parts[0].toLowerCase() === 'time') {
-            // Found header row - extract percentiles at fixed offsets
-            let p50 = null;
+        if (currentDate && parts[0] && parts[0].toLowerCase() === 'time' && parts.length > 7) {
+            // Found header row - extract 85th percentile at fixed offset
             let p85 = null;
 
-            // Row +6 from header = 50th percentile (column 7)
-            const p50RowIdx = i + 6;
-            if (p50RowIdx < lines.length) {
-                const p50Parts = lines[p50RowIdx].split(',').map(p => p.trim());
-                if (p50Parts.length > 7) {
-                    const val = parseFloat(p50Parts[7]);
-                    // Sanity check: should be a reasonable speed (1-100 mph)
-                    if (!isNaN(val) && val >= 1 && val <= 100) {
-                        p50 = val;
-                    }
-                }
-            }
-
-            // Row +7 from header = 85th percentile (column 6)
-            const p85RowIdx = i + 7;
+            // Row +6 from header = 85th percentile (Summary column, index 7)
+            // Note: 50th percentile is NOT available in raw summary data
+            const p85RowIdx = i + 6;
             if (p85RowIdx < lines.length) {
                 const p85Parts = lines[p85RowIdx].split(',').map(p => p.trim());
-                if (p85Parts.length > 6) {
-                    const val = parseFloat(p85Parts[6]);
-                    // Sanity check: should be a reasonable speed (1-100 mph)
-                    if (!isNaN(val) && val >= 1 && val <= 100) {
-                        p85 = val;
+                if (p85Parts.length > 7) {
+                    const valStr = p85Parts[7];
+                    // Check if it's a valid number string
+                    if (valStr && valStr.replace('.', '').replace('-', '').match(/^\d+$/)) {
+                        const val = parseFloat(valStr);
+                        // Sanity check: should be a reasonable speed (1-100 mph)
+                        if (!isNaN(val) && val >= 1 && val <= 100) {
+                            p85 = val;
+                        }
                     }
                 }
             }
 
-            // Store the percentiles for this date
-            if (p50 !== null || p85 !== null) {
+            // Store the percentile for this date
+            if (p85 !== null) {
                 // Normalize date to YYYY-MM-DD format for consistency
                 const dateParts = currentDate.split('/');
-                const normalizedDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
+                if (dateParts.length === 3) {
+                    const normalizedDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
 
-                dailyPercentiles[normalizedDate] = {
-                    p50: p50 || 0,
-                    p85: p85 || 0
-                };
+                    dailyPercentiles[normalizedDate] = {
+                        p50: 0,  // Not available in raw summary data
+                        p85: p85
+                    };
+                }
             }
 
             // Reset for next day
