@@ -215,11 +215,13 @@ export function drawBarChart(doc, data, options = {}) {
         doc.setFillColor(...color);
         doc.rect(barX, barY, effectiveBarWidth, barHeight, 'F');
 
-        // Value on top
+        // Value on top (rounded)
         if (showValues && value > 0) {
             doc.setFontSize(5);
             doc.setTextColor(...COLORS.text);
-            doc.text(value.toLocaleString(), barX + effectiveBarWidth / 2, barY - 1, { align: 'center' });
+            // Round to nearest integer, or 1 decimal for small values
+            const displayValue = value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+            doc.text(displayValue.toLocaleString(), barX + effectiveBarWidth / 2, barY - 1, { align: 'center' });
         }
 
         // X-axis label
@@ -247,14 +249,31 @@ export function drawGroupedBarChart(doc, data, options = {}) {
         series2Label = 'Series 2',
         series1Color = COLORS.lawAbiding,
         series2Color = COLORS.violators,
-        showValues = true
+        showValues = true,
+        startFromZero = true // Set false for speed charts to show more detail
     } = options;
 
     if (!data || data.length === 0) return;
 
     const values1 = data.map(d => d[series1Key] || 0);
     const values2 = data.map(d => d[series2Key] || 0);
-    const maxValue = Math.max(...values1, ...values2, 1);
+    const allValues = [...values1, ...values2].filter(v => v > 0);
+    const dataMax = Math.max(...allValues, 1);
+    const dataMin = Math.min(...allValues);
+
+    // Calculate axis range - start from 0 or use dynamic min for better detail
+    let minValue = 0;
+    let maxValue = dataMax;
+    if (!startFromZero && allValues.length > 0) {
+        const range = dataMax - dataMin;
+        const padding = range * 0.2 || dataMax * 0.1;
+        minValue = Math.max(0, Math.floor((dataMin - padding) / 5) * 5); // Round down to nearest 5
+        maxValue = Math.ceil((dataMax + padding) / 5) * 5; // Round up to nearest 5
+    } else {
+        maxValue = Math.ceil(dataMax * 1.1 / 5) * 5; // Add 10% padding, round to nearest 5
+    }
+
+    const valueRange = maxValue - minValue || 1;
     const barCount = data.length;
     const chartBottom = y + height;
     const chartLeft = x + 15;
@@ -292,7 +311,7 @@ export function drawGroupedBarChart(doc, data, options = {}) {
     const yTicks = 5;
     for (let i = 0; i <= yTicks; i++) {
         const tickY = chartBottom - 15 - (i / yTicks) * chartHeight;
-        const tickValue = Math.round((i / yTicks) * maxValue);
+        const tickValue = Math.round(minValue + (i / yTicks) * valueRange);
 
         doc.setDrawColor(...COLORS.gridLine);
         doc.setLineWidth(0.2);
@@ -318,26 +337,26 @@ export function drawGroupedBarChart(doc, data, options = {}) {
         const value2 = d[series2Key] || 0;
         const groupX = chartLeft + (i * groupWidth);
 
-        // First bar
-        const bar1Height = (value1 / maxValue) * chartHeight;
+        // First bar - scale relative to minValue
+        const bar1Height = ((value1 - minValue) / valueRange) * chartHeight;
         const bar1X = groupX + barGap;
-        const bar1Y = chartBottom - 15 - bar1Height;
+        const bar1Y = chartBottom - 15 - Math.max(0, bar1Height);
         doc.setFillColor(...series1Color);
-        doc.rect(bar1X, bar1Y, barWidth, bar1Height, 'F');
+        if (bar1Height > 0) doc.rect(bar1X, bar1Y, barWidth, bar1Height, 'F');
 
-        // Second bar
-        const bar2Height = (value2 / maxValue) * chartHeight;
+        // Second bar - scale relative to minValue
+        const bar2Height = ((value2 - minValue) / valueRange) * chartHeight;
         const bar2X = groupX + barGap + barWidth + barGap;
-        const bar2Y = chartBottom - 15 - bar2Height;
+        const bar2Y = chartBottom - 15 - Math.max(0, bar2Height);
         doc.setFillColor(...series2Color);
-        doc.rect(bar2X, bar2Y, barWidth, bar2Height, 'F');
+        if (bar2Height > 0) doc.rect(bar2X, bar2Y, barWidth, bar2Height, 'F');
 
-        // Values on top
+        // Values on top (rounded)
         if (showValues) {
             doc.setFontSize(4);
             doc.setTextColor(...COLORS.text);
-            if (value1 > 0) doc.text(value1.toLocaleString(), bar1X + barWidth / 2, bar1Y - 1, { align: 'center' });
-            if (value2 > 0) doc.text(value2.toLocaleString(), bar2X + barWidth / 2, bar2Y - 1, { align: 'center' });
+            if (value1 > 0) doc.text(Math.round(value1).toLocaleString(), bar1X + barWidth / 2, bar1Y - 1, { align: 'center' });
+            if (value2 > 0) doc.text(Math.round(value2).toLocaleString(), bar2X + barWidth / 2, bar2Y - 1, { align: 'center' });
         }
 
         // X-axis label
@@ -373,10 +392,17 @@ export function drawLineChart(doc, data, options = {}) {
 
     const values1 = data.map(d => d[series1Key] || 0);
     const values2 = series2Key ? data.map(d => d[series2Key] || 0) : [];
-    const allValues = [...values1, ...values2];
+    const allValues = [...values1, ...values2].filter(v => v > 0);
     if (referenceLine) allValues.push(referenceLine);
-    const maxValue = Math.max(...allValues, 1);
-    const minValue = Math.min(...allValues.filter(v => v > 0), 0);
+    const dataMax = Math.max(...allValues, 1);
+    const dataMin = Math.min(...allValues);
+
+    // Calculate nice axis range with padding
+    const range = dataMax - dataMin;
+    const padding = range * 0.15 || dataMax * 0.1;
+    const minValue = Math.max(0, Math.floor((dataMin - padding) / 5) * 5);
+    const maxValue = Math.ceil((dataMax + padding) / 5) * 5;
+    const yRange = maxValue - minValue || 1;
 
     const chartBottom = y + height;
     const chartLeft = x + 15;
@@ -417,7 +443,6 @@ export function drawLineChart(doc, data, options = {}) {
 
     // Y-axis ticks and grid
     const yTicks = 5;
-    const yRange = maxValue - minValue || 1;
     for (let i = 0; i <= yTicks; i++) {
         const tickY = chartBottom - 15 - (i / yTicks) * chartHeight;
         const tickValue = Math.round(minValue + (i / yTicks) * yRange);
@@ -940,7 +965,8 @@ export function drawChartByType(doc, chartType, data, options = {}) {
                 series2Label: '85th %ile',
                 series1Color: COLORS.avgSpeed,
                 series2Color: COLORS.percentile85,
-                showValues: showLabels
+                showValues: showLabels,
+                startFromZero: false // Show more detail for speed comparisons
             });
             break;
 

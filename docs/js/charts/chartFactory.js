@@ -45,13 +45,13 @@ function getChartConfig(chartType, data, options = {}) {
                     datasets: [
                         {
                             label: 'Law-Abiding',
-                            data: data.map(d => d.non_speeders),
+                            data: data.map(d => Math.round(d.non_speeders || 0)),
                             backgroundColor: CHART_COLORS.lawAbiding,
                             borderRadius: 4
                         },
                         {
                             label: 'Violators',
-                            data: data.map(d => d.violators),
+                            data: data.map(d => Math.round(d.violators || 0)),
                             backgroundColor: CHART_COLORS.violators,
                             borderRadius: 4
                         }
@@ -61,11 +61,18 @@ function getChartConfig(chartType, data, options = {}) {
                     ...baseConfig,
                     scales: {
                         x: { grid: { display: false } },
-                        y: { beginAtZero: true, title: { display: true, text: 'Vehicles' } }
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Vehicles' },
+                            ticks: { callback: v => Math.round(v).toLocaleString() }
+                        }
                     },
                     plugins: {
                         ...baseConfig.plugins,
-                        datalabels: showLabels ? { display: true } : { display: false }
+                        datalabels: showLabels ? {
+                            display: true,
+                            formatter: (value) => Math.round(value).toLocaleString()
+                        } : { display: false }
                     }
                 }
             };
@@ -112,7 +119,7 @@ function getChartConfig(chartType, data, options = {}) {
             const datasets = [
                 {
                     label: 'Average Speed',
-                    data: data.map(d => d.avg_speed),
+                    data: data.map(d => Math.round(d.avg_speed || 0)),
                     borderColor: CHART_COLORS.avgSpeed,
                     backgroundColor: CHART_COLORS.avgSpeed + '40',
                     fill: false,
@@ -120,7 +127,7 @@ function getChartConfig(chartType, data, options = {}) {
                 },
                 {
                     label: 'Peak Speed',
-                    data: data.map(d => d.peak_speed),
+                    data: data.map(d => Math.round(d.peak_speed || 0)),
                     borderColor: CHART_COLORS.peakSpeed,
                     backgroundColor: CHART_COLORS.peakSpeed + '40',
                     fill: false,
@@ -141,6 +148,16 @@ function getChartConfig(chartType, data, options = {}) {
                 });
             }
 
+            // Calculate axis range for better detail
+            const avgPeakValues = data.flatMap(d => [d.avg_speed, d.peak_speed]).filter(v => v > 0);
+            if (speedLimit > 0) avgPeakValues.push(speedLimit);
+            const avgPeakMin = Math.min(...avgPeakValues);
+            const avgPeakMax = Math.max(...avgPeakValues);
+            const avgPeakRange = avgPeakMax - avgPeakMin;
+            const avgPeakPadding = avgPeakRange * 0.15 || 5;
+            const suggestedMinAvgPeak = Math.max(0, Math.floor((avgPeakMin - avgPeakPadding) / 5) * 5);
+            const suggestedMaxAvgPeak = Math.ceil((avgPeakMax + avgPeakPadding) / 5) * 5;
+
             return {
                 type: 'line',
                 data: { labels, datasets },
@@ -150,7 +167,10 @@ function getChartConfig(chartType, data, options = {}) {
                         x: { grid: { display: false } },
                         y: {
                             beginAtZero: false,
-                            title: { display: true, text: 'Speed (mph)' }
+                            suggestedMin: suggestedMinAvgPeak,
+                            suggestedMax: suggestedMaxAvgPeak,
+                            title: { display: true, text: 'Speed (mph)' },
+                            ticks: { callback: v => Math.round(v) }
                         }
                     },
                     plugins: {
@@ -158,7 +178,7 @@ function getChartConfig(chartType, data, options = {}) {
                         datalabels: showLabels ? {
                             display: true,
                             align: 'top',
-                            formatter: (value) => value?.toFixed(1)
+                            formatter: (value) => Math.round(value)
                         } : { display: false }
                     }
                 }
@@ -168,7 +188,7 @@ function getChartConfig(chartType, data, options = {}) {
             const avgVs85thDatasets = [
                 {
                     label: 'Average Speed',
-                    data: data.map(d => d.avg_speed),
+                    data: data.map(d => Math.round(d.avg_speed || 0)),
                     backgroundColor: CHART_COLORS.avgSpeed,
                     borderRadius: 4
                 }
@@ -179,11 +199,20 @@ function getChartConfig(chartType, data, options = {}) {
             if (has85th) {
                 avgVs85thDatasets.push({
                     label: '85th Percentile',
-                    data: data.map(d => d.p85 || 0),
+                    data: data.map(d => Math.round(d.p85 || 0)),
                     backgroundColor: CHART_COLORS.percentile85,
                     borderRadius: 4
                 });
             }
+
+            // Calculate axis range for better detail
+            const speedValues = data.flatMap(d => [d.avg_speed, d.p85]).filter(v => v > 0);
+            const speedMin = Math.min(...speedValues);
+            const speedMax = Math.max(...speedValues);
+            const speedRange = speedMax - speedMin;
+            const speedPadding = speedRange * 0.3 || 5;
+            const suggestedMin85th = Math.max(0, Math.floor((speedMin - speedPadding) / 5) * 5);
+            const suggestedMax85th = Math.ceil((speedMax + speedPadding) / 5) * 5;
 
             return {
                 type: 'bar',
@@ -194,8 +223,19 @@ function getChartConfig(chartType, data, options = {}) {
                         x: { grid: { display: false } },
                         y: {
                             beginAtZero: false,
-                            title: { display: true, text: 'Speed (mph)' }
+                            suggestedMin: suggestedMin85th,
+                            suggestedMax: suggestedMax85th,
+                            title: { display: true, text: 'Speed (mph)' },
+                            ticks: { callback: v => Math.round(v) }
                         }
+                    },
+                    plugins: {
+                        ...baseConfig.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            align: 'top',
+                            formatter: (value) => Math.round(value)
+                        } : { display: false }
                     }
                 }
             };
@@ -208,7 +248,7 @@ function getChartConfig(chartType, data, options = {}) {
                     datasets: [
                         {
                             label: 'Vehicles',
-                            data: data.map(d => d.vehicles),
+                            data: data.map(d => Math.round(d.vehicles || 0)),
                             backgroundColor: CHART_COLORS.volume,
                             borderRadius: 4
                         }
@@ -220,8 +260,16 @@ function getChartConfig(chartType, data, options = {}) {
                         x: { grid: { display: false } },
                         y: {
                             beginAtZero: true,
-                            title: { display: true, text: 'Vehicle Count' }
+                            title: { display: true, text: 'Vehicle Count' },
+                            ticks: { callback: v => Math.round(v).toLocaleString() }
                         }
+                    },
+                    plugins: {
+                        ...baseConfig.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            formatter: (value) => Math.round(value).toLocaleString()
+                        } : { display: false }
                     }
                 }
             };
