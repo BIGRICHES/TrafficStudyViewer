@@ -53,7 +53,8 @@ const elements = {
     // Sidebar
     searchInput: document.getElementById('search-input'),
     filterType: document.getElementById('filter-type'),
-    filterDirection: document.getElementById('filter-direction'),
+    filterStartDate: document.getElementById('filter-start-date'),
+    filterEndDate: document.getElementById('filter-end-date'),
     studyList: document.getElementById('study-list'),
     studyCount: document.getElementById('study-count'),
 
@@ -67,9 +68,9 @@ const elements = {
     chartCanvas: document.getElementById('main-chart'),
     chartTypeSelect: document.getElementById('chart-type-select'),
     timeAggSelect: document.getElementById('time-agg-select'),
-    showLabelsCheck: document.getElementById('show-labels-check'),
     chartStartDate: document.getElementById('chart-start-date'),
     chartEndDate: document.getElementById('chart-end-date'),
+    resetDateRangeBtn: document.getElementById('reset-date-range-btn'),
 
     // Study info
     studyTitle: document.getElementById('study-title'),
@@ -88,7 +89,6 @@ const elements = {
 
     // Map
     mapContainer: document.getElementById('map-container'),
-    mapFilterType: document.getElementById('map-filter-type'),
     mapStudyCount: document.getElementById('map-study-count'),
 
     // Reports - Advanced Builder
@@ -114,15 +114,14 @@ const elements = {
     chartModalFullRange: document.getElementById('chart-modal-full-range'),
     chartModalDateRange: document.getElementById('chart-modal-date-range'),
     chartModalStartDate: document.getElementById('chart-modal-start-date'),
+    chartModalStartTime: document.getElementById('chart-modal-start-time'),
     chartModalEndDate: document.getElementById('chart-modal-end-date'),
+    chartModalEndTime: document.getElementById('chart-modal-end-time'),
     chartModalTimeFilter: document.getElementById('chart-modal-time-filter'),
     chartModalTimeRange: document.getElementById('chart-modal-time-range'),
     chartModalTimeStart: document.getElementById('chart-modal-time-start'),
     chartModalTimeEnd: document.getElementById('chart-modal-time-end'),
     chartModalShowLabels: document.getElementById('chart-modal-show-labels'),
-    modalSelectWeekdays: document.getElementById('modal-select-weekdays'),
-    modalSelectWeekend: document.getElementById('modal-select-weekend'),
-    modalSelectAllDays: document.getElementById('modal-select-all-days'),
     presetSchool: document.getElementById('preset-school'),
     presetRushAm: document.getElementById('preset-rush-am'),
     presetRushPm: document.getElementById('preset-rush-pm'),
@@ -175,9 +174,10 @@ async function init() {
     const hasHandle = await fileSystem.hasStoredHandle();
 
     if (hasHandle) {
-        elements.folderStatus.textContent = 'Click to reconnect to your data folder';
-        elements.folderStatus.className = 'folder-status info';
-        elements.selectFolderBtn.textContent = 'Reconnect to Folder';
+        elements.folderStatus.textContent = '';
+        elements.folderStatus.className = 'folder-status';
+        elements.selectFolderBtn.textContent = 'Connect';
+        elements.selectFolderBtn.classList.add('btn-success');
         elements.clearFolderBtn.style.display = 'inline-block';
     }
 
@@ -192,7 +192,8 @@ function setupEventListeners() {
 
     elements.searchInput.addEventListener('input', debounce(updateStudyList, 300));
     elements.filterType.addEventListener('change', updateStudyList);
-    elements.filterDirection.addEventListener('change', updateStudyList);
+    elements.filterStartDate.addEventListener('change', updateStudyList);
+    elements.filterEndDate.addEventListener('change', updateStudyList);
 
     elements.tabs.forEach(tab => {
         tab.addEventListener('click', () => switchTab(tab.dataset.tab));
@@ -200,11 +201,12 @@ function setupEventListeners() {
 
     elements.chartTypeSelect.addEventListener('change', updateChart);
     elements.timeAggSelect.addEventListener('change', updateChart);
-    elements.showLabelsCheck.addEventListener('change', updateChart);
     elements.chartStartDate.addEventListener('change', handleDateRangeChange);
     elements.chartEndDate.addEventListener('change', handleDateRangeChange);
-
-    elements.mapFilterType.addEventListener('change', updateMapMarkers);
+    elements.resetDateRangeBtn.addEventListener('click', () => {
+        setDateRangeFromData();
+        handleDateRangeChange();
+    });
 
     // Report Builder
     elements.addChartBtn.addEventListener('click', openAddChartModal);
@@ -216,14 +218,9 @@ function setupEventListeners() {
 
     // Chart Modal interactions
     elements.chartStudySearch.addEventListener('input', debounce(filterStudyDropdown, 200));
-    elements.chartStudySearch.addEventListener('focus', () => elements.chartStudyList.classList.add('show'));
+    elements.chartStudySearch.addEventListener('focus', filterStudyDropdown);
     elements.chartModalFullRange.addEventListener('change', toggleDateRange);
     elements.chartModalTimeFilter.addEventListener('change', toggleTimeFilter);
-
-    // Modal day presets
-    elements.modalSelectWeekdays.addEventListener('click', () => setModalDayPreset('weekdays'));
-    elements.modalSelectWeekend.addEventListener('click', () => setModalDayPreset('weekend'));
-    elements.modalSelectAllDays.addEventListener('click', () => setModalDayPreset('all'));
 
     // Time presets
     elements.presetSchool.addEventListener('click', () => setTimePreset('07:00', '09:00'));
@@ -255,7 +252,7 @@ function setupEventListeners() {
     }
     if (elements.tableStudySearch) {
         elements.tableStudySearch.addEventListener('input', debounce(filterTableStudyDropdown, 200));
-        elements.tableStudySearch.addEventListener('focus', () => elements.tableStudyList.classList.add('show'));
+        elements.tableStudySearch.addEventListener('focus', filterTableStudyDropdown);
     }
     if (elements.tableFullRangeBtn) {
         elements.tableFullRangeBtn.addEventListener('click', setTableFullRange);
@@ -403,7 +400,8 @@ async function loadAndShowApp() {
 function updateStudyList() {
     const query = elements.searchInput.value.toLowerCase().trim();
     const filterType = elements.filterType.value;
-    const filterDirection = elements.filterDirection.value;
+    const filterStartDate = elements.filterStartDate.value;
+    const filterEndDate = elements.filterEndDate.value;
 
     let studies = studyIndex.getAll();
 
@@ -418,8 +416,23 @@ function updateStudyList() {
     if (filterType) {
         studies = studies.filter(s => s.study_type === filterType);
     }
-    if (filterDirection) {
-        studies = studies.filter(s => s.direction === filterDirection);
+    // Date range filter - show studies that overlap with the filter range
+    if (filterStartDate || filterEndDate) {
+        studies = studies.filter(s => {
+            const studyStart = s.start_datetime ? new Date(s.start_datetime) : null;
+            const studyEnd = s.end_datetime ? new Date(s.end_datetime) : null;
+            const filterStart = filterStartDate ? new Date(filterStartDate) : null;
+            const filterEnd = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
+
+            // If study has no dates, include it
+            if (!studyStart && !studyEnd) return true;
+
+            // Check for overlap: study ends before filter starts OR study starts after filter ends
+            if (filterStart && studyEnd && studyEnd < filterStart) return false;
+            if (filterEnd && studyStart && studyStart > filterEnd) return false;
+
+            return true;
+        });
     }
 
     elements.studyCount.textContent = studies.length;
@@ -470,6 +483,9 @@ function updateStudyList() {
     elements.studyList.querySelectorAll('.linked-group-header').forEach(header => {
         header.addEventListener('click', () => toggleGroup(header.dataset.group));
     });
+
+    // Update map markers to match sidebar filters
+    updateMapMarkers();
 }
 
 function createStudyItem(study) {
@@ -652,7 +668,6 @@ function updateChart() {
 
     const chartType = elements.chartTypeSelect.value;
     const timeAgg = elements.timeAggSelect.value;
-    const showLabels = elements.showLabelsCheck.checked;
 
     createChart(
         elements.chartCanvas,
@@ -660,7 +675,7 @@ function updateChart() {
         filteredStudyData,
         timeAgg,
         {
-            showLabels,
+            showLabels: true,
             speedLimit: currentStudy.speed_limit || 0
         }
     );
@@ -730,11 +745,43 @@ function updateMapMarkers() {
     markersLayer.clearLayers();
     studyMarkers.clear();
 
-    const filterType = elements.mapFilterType.value;
+    // Use same filters as sidebar
+    const query = elements.searchInput.value.toLowerCase().trim();
+    const filterType = elements.filterType.value;
+    const filterStartDate = elements.filterStartDate.value;
+    const filterEndDate = elements.filterEndDate.value;
+
     let studies = studyIndex.getWithCoordinates();
 
+    // Apply search filter
+    if (query) {
+        studies = studies.filter(s => {
+            const location = (s.location || '').toLowerCase();
+            const counter = (s.counter_number || '').toLowerCase();
+            const id = (s.study_id || '').toLowerCase();
+            return location.includes(query) || counter.includes(query) || id.includes(query);
+        });
+    }
+
+    // Apply type filter
     if (filterType) {
         studies = studies.filter(s => s.study_type === filterType);
+    }
+
+    // Apply date range filter
+    if (filterStartDate || filterEndDate) {
+        studies = studies.filter(s => {
+            const studyStart = s.start_datetime ? new Date(s.start_datetime) : null;
+            const studyEnd = s.end_datetime ? new Date(s.end_datetime) : null;
+            const filterStart = filterStartDate ? new Date(filterStartDate) : null;
+            const filterEnd = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
+
+            if (!studyStart && !studyEnd) return true;
+            if (filterStart && studyEnd && studyEnd < filterStart) return false;
+            if (filterEnd && studyStart && studyStart > filterEnd) return false;
+
+            return true;
+        });
     }
 
     const linkGroups = new Map();
@@ -889,7 +936,7 @@ function openAddChartModal() {
     elements.chartModal.style.display = 'flex';
 }
 
-function openEditChartModal(index) {
+window.openEditChartModal = function(index) {
     editingItemIndex = index;
     const item = reportItems[index];
 
@@ -906,14 +953,10 @@ function openEditChartModal(index) {
     elements.chartModalFullRange.checked = item.fullRange;
     elements.chartModalDateRange.style.display = item.fullRange ? 'none' : 'flex';
     elements.chartModalStartDate.value = item.startDate || '';
+    elements.chartModalStartTime.value = item.startTime || '00:00';
     elements.chartModalEndDate.value = item.endDate || '';
+    elements.chartModalEndTime.value = item.endTime || '23:59';
     elements.chartModalShowLabels.checked = item.showLabels;
-
-    // Days of week
-    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
-    dayCheckboxes.forEach(cb => {
-        cb.checked = item.daysOfWeek.includes(parseInt(cb.value));
-    });
 
     // Time filter
     elements.chartModalTimeFilter.checked = item.timeFilterEnabled;
@@ -939,14 +982,12 @@ function resetChartModal() {
     elements.chartModalFullRange.checked = true;
     elements.chartModalDateRange.style.display = 'none';
     elements.chartModalStartDate.value = '';
+    elements.chartModalStartTime.value = '00:00';
     elements.chartModalEndDate.value = '';
+    elements.chartModalEndTime.value = '23:59';
     elements.chartModalShowLabels.checked = true;
     elements.chartModalTimeFilter.checked = false;
     elements.chartModalTimeRange.style.display = 'none';
-
-    // Reset all days to checked
-    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
-    dayCheckboxes.forEach(cb => cb.checked = true);
 }
 
 function toggleDateRange() {
@@ -955,20 +996,6 @@ function toggleDateRange() {
 
 function toggleTimeFilter() {
     elements.chartModalTimeRange.style.display = elements.chartModalTimeFilter.checked ? 'flex' : 'none';
-}
-
-function setModalDayPreset(preset) {
-    const dayCheckboxes = document.querySelectorAll('input[name="chart-modal-day"]');
-    dayCheckboxes.forEach(cb => {
-        const day = parseInt(cb.value);
-        if (preset === 'weekdays') {
-            cb.checked = day >= 1 && day <= 5;
-        } else if (preset === 'weekend') {
-            cb.checked = day === 0 || day === 6;
-        } else {
-            cb.checked = true;
-        }
-    });
 }
 
 function setTimePreset(start, end) {
@@ -1040,14 +1067,6 @@ function saveChartItem() {
         return;
     }
 
-    const daysOfWeek = Array.from(document.querySelectorAll('input[name="chart-modal-day"]:checked'))
-        .map(cb => parseInt(cb.value));
-
-    if (daysOfWeek.length === 0) {
-        alert('Please select at least one day of the week');
-        return;
-    }
-
     const item = {
         studyId: modalSelectedStudyId,
         studyMeta: modalSelectedStudyMeta,
@@ -1055,8 +1074,9 @@ function saveChartItem() {
         timeAgg: elements.chartModalTimeAgg.value,
         fullRange: elements.chartModalFullRange.checked,
         startDate: elements.chartModalStartDate.value,
+        startTime: elements.chartModalStartTime.value,
         endDate: elements.chartModalEndDate.value,
-        daysOfWeek: daysOfWeek,
+        endTime: elements.chartModalEndTime.value,
         timeFilterEnabled: elements.chartModalTimeFilter.checked,
         timeStart: elements.chartModalTimeStart.value,
         timeEnd: elements.chartModalTimeEnd.value,
@@ -1113,13 +1133,6 @@ function renderReportItems() {
         } else {
             if (!item.fullRange && item.startDate) {
                 filters.push(`${item.startDate} to ${item.endDate}`);
-            }
-            if (item.daysOfWeek && item.daysOfWeek.length < 7) {
-                if (item.daysOfWeek.length === 5 && !item.daysOfWeek.includes(0) && !item.daysOfWeek.includes(6)) {
-                    filters.push('Weekdays');
-                } else if (item.daysOfWeek.length === 2 && item.daysOfWeek.includes(0) && item.daysOfWeek.includes(6)) {
-                    filters.push('Weekend');
-                }
             }
             if (item.timeFilterEnabled) {
                 filters.push(`${item.timeStart}-${item.timeEnd}`);
@@ -1426,20 +1439,19 @@ function filterDataForItem(data, item) {
         if (!d.datetime) return false;
         const dt = new Date(d.datetime);
 
-        // Date range filter
+        // Date range filter (with optional time)
         if (!item.fullRange) {
             if (item.startDate) {
-                const start = new Date(item.startDate + 'T00:00:00');
+                const startTime = item.startTime || '00:00';
+                const start = new Date(item.startDate + 'T' + startTime + ':00');
                 if (dt < start) return false;
             }
             if (item.endDate) {
-                const end = new Date(item.endDate + 'T23:59:59');
+                const endTime = item.endTime || '23:59';
+                const end = new Date(item.endDate + 'T' + endTime + ':59');
                 if (dt > end) return false;
             }
         }
-
-        // Day of week filter
-        if (!item.daysOfWeek.includes(dt.getDay())) return false;
 
         // Time of day filter
         if (item.timeFilterEnabled) {
@@ -1503,14 +1515,18 @@ async function generateReport() {
             overallStats = pdfGen.calculateReportStatistics(firstFiltered);
         }
 
-        // Calculate date range for header
+        // Calculate date range for header - only show if all items share the same range
         let dateRangeStr = '';
-        if (firstItem) {
-            if (firstItem.useFullRange && firstStudy.date_range) {
-                dateRangeStr = firstStudy.date_range;
-            } else if (firstItem.startDate && firstItem.endDate) {
-                const start = new Date(firstItem.startDate);
-                const end = new Date(firstItem.endDate);
+        if (reportItems.length > 0) {
+            const firstStart = reportItems[0].startDate;
+            const firstEnd = reportItems[0].endDate;
+            const allSameRange = reportItems.every(item =>
+                item.startDate === firstStart && item.endDate === firstEnd
+            );
+
+            if (allSameRange && firstStart && firstEnd) {
+                const start = new Date(firstStart);
+                const end = new Date(firstEnd);
                 dateRangeStr = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
             }
         }

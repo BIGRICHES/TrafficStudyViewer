@@ -102,13 +102,11 @@
                         <option value="TimeMark Volume">TimeMark Volume</option>
                         <option value="JAMAR Tube">JAMAR Tube</option>
                     </select>
-                    <select id="filter-direction" class="filter-select">
-                        <option value="">All Directions</option>
-                        <option value="Northbound">Northbound</option>
-                        <option value="Southbound">Southbound</option>
-                        <option value="Eastbound">Eastbound</option>
-                        <option value="Westbound">Westbound</option>
-                    </select>
+                </div>
+                <div class="filters date-filters">
+                    <input type="date" id="filter-start-date" class="filter-input" title="Filter from date">
+                    <span class="date-separator">-</span>
+                    <input type="date" id="filter-end-date" class="filter-input" title="Filter to date">
                 </div>
 
                 <!-- Study List -->
@@ -131,13 +129,6 @@
                     <!-- Map Tab -->
                     <div id="map-tab" class="tab-pane active">
                         <div class="map-controls">
-                            <select id="map-filter-type" class="control-select">
-                                <option value="">All Types</option>
-                                <option value="Radar">Radar</option>
-                                <option value="TimeMark Speed">TimeMark Speed</option>
-                                <option value="TimeMark Volume">TimeMark Volume</option>
-                                <option value="JAMAR Tube">JAMAR Tube</option>
-                            </select>
                             <span id="map-study-count" class="badge">0 studies</span>
                         </div>
                         <div id="map-container"></div>
@@ -179,11 +170,8 @@
                                     <input type="date" id="chart-start-date" class="control-input">
                                     <label>To:</label>
                                     <input type="date" id="chart-end-date" class="control-input">
+                                    <button id="reset-date-range-btn" class="btn btn-small" title="Reset to full range">Reset</button>
                                 </div>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="show-labels-check" checked>
-                                    Show Labels
-                                </label>
                             </div>
 
                             <!-- Chart Canvas -->
@@ -320,27 +308,10 @@
                                         </label>
                                         <div id="chart-modal-date-range" class="report-date-range" style="display: none; margin-top: 0.5rem;">
                                             <input type="date" id="chart-modal-start-date" class="control-input">
+                                            <input type="time" id="chart-modal-start-time" class="control-input time-input" value="00:00">
                                             <span>to</span>
                                             <input type="date" id="chart-modal-end-date" class="control-input">
-                                        </div>
-                                    </div>
-
-                                    <!-- Day of Week Filter -->
-                                    <div class="form-group">
-                                        <label>Days of Week</label>
-                                        <div class="day-filter">
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="1" checked><span>Mon</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="2" checked><span>Tue</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="3" checked><span>Wed</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="4" checked><span>Thu</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="5" checked><span>Fri</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="6" checked><span>Sat</span></label>
-                                            <label class="day-checkbox"><input type="checkbox" name="chart-modal-day" value="0" checked><span>Sun</span></label>
-                                        </div>
-                                        <div class="day-presets">
-                                            <button type="button" class="btn-link" id="modal-select-weekdays">Weekdays</button>
-                                            <button type="button" class="btn-link" id="modal-select-weekend">Weekend</button>
-                                            <button type="button" class="btn-link" id="modal-select-all-days">All</button>
+                                            <input type="time" id="chart-modal-end-time" class="control-input time-input" value="23:59">
                                         </div>
                                     </div>
 
