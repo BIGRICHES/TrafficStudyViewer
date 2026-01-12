@@ -161,6 +161,118 @@ export async function loadRawData(studyId) {
 }
 
 /**
+ * Extract daily 50th and 85th percentiles from raw Radar CSV file.
+ *
+ * The raw file encodes percentiles in the "Summary" column (column index 7)
+ * at fixed row offsets from the header row:
+ * - Row +6 from "Time" header = 50th percentile
+ * - Row +7 from "Time" header = 85th percentile
+ *
+ * These values are pre-calculated by the radar device firmware.
+ *
+ * @param {string} studyId
+ * @returns {Promise<Object>} Dict mapping date string -> {p50, p85}
+ */
+export async function extractRadarPercentiles(studyId) {
+    const study = getById(studyId);
+    if (!study) return {};
+
+    // Only for Radar studies
+    if (study.study_type !== 'Radar') return {};
+
+    try {
+        // Try to find the raw file
+        const files = await fileSystem.listFiles('raw');
+        const rawFile = files.find(f => f.startsWith(`${studyId}_`));
+
+        if (!rawFile) {
+            console.log(`No raw file found for Radar study ${studyId}`);
+            return {};
+        }
+
+        const csvContent = await fileSystem.readFile(`raw/${rawFile}`);
+        return parseRadarPercentiles(csvContent);
+    } catch (error) {
+        console.warn(`Could not extract percentiles for study ${studyId}:`, error);
+        return {};
+    }
+}
+
+/**
+ * Parse raw Radar CSV content to extract percentiles
+ * @param {string} csvContent
+ * @returns {Object} Dict mapping date string -> {p50, p85}
+ */
+function parseRadarPercentiles(csvContent) {
+    const dailyPercentiles = {};
+    const lines = csvContent.split('\n');
+
+    let currentDate = null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const parts = line.split(',').map(p => p.trim());
+
+        // Check for date line (e.g., "1/6/2025" or "01/06/2025")
+        // Date lines typically have the date in the first cell and may have other content
+        if (parts[0] && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(parts[0])) {
+            currentDate = parts[0];
+        }
+
+        // Look for the "Time" header row (first column is "Time" or "time")
+        if (currentDate && parts[0] && parts[0].toLowerCase() === 'time') {
+            // Found header row - extract percentiles at fixed offsets
+            let p50 = null;
+            let p85 = null;
+
+            // Row +6 from header = 50th percentile (column 7)
+            const p50RowIdx = i + 6;
+            if (p50RowIdx < lines.length) {
+                const p50Parts = lines[p50RowIdx].split(',').map(p => p.trim());
+                if (p50Parts.length > 7) {
+                    const val = parseFloat(p50Parts[7]);
+                    // Sanity check: should be a reasonable speed (1-100 mph)
+                    if (!isNaN(val) && val >= 1 && val <= 100) {
+                        p50 = val;
+                    }
+                }
+            }
+
+            // Row +7 from header = 85th percentile (column 7)
+            const p85RowIdx = i + 7;
+            if (p85RowIdx < lines.length) {
+                const p85Parts = lines[p85RowIdx].split(',').map(p => p.trim());
+                if (p85Parts.length > 7) {
+                    const val = parseFloat(p85Parts[7]);
+                    // Sanity check: should be a reasonable speed (1-100 mph)
+                    if (!isNaN(val) && val >= 1 && val <= 100) {
+                        p85 = val;
+                    }
+                }
+            }
+
+            // Store the percentiles for this date
+            if (p50 !== null || p85 !== null) {
+                // Normalize date to YYYY-MM-DD format for consistency
+                const dateParts = currentDate.split('/');
+                const normalizedDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
+
+                dailyPercentiles[normalizedDate] = {
+                    p50: p50 || 0,
+                    p85: p85 || 0
+                };
+            }
+
+            // Reset for next day
+            currentDate = null;
+        }
+    }
+
+    console.log(`Extracted percentiles for ${Object.keys(dailyPercentiles).length} days`);
+    return dailyPercentiles;
+}
+
+/**
  * Check if a study is volume-only (no speed data)
  * @param {string} studyType
  * @returns {boolean}

@@ -49,9 +49,10 @@ export function max(values) {
 /**
  * Aggregate data by day
  * @param {Array} data - Array of data rows with datetime field
+ * @param {Object} extractedPercentiles - Optional dict of date -> {p50, p85} from raw file
  * @returns {Array} Aggregated data by date
  */
-export function aggregateDaily(data) {
+export function aggregateDaily(data, extractedPercentiles = null) {
     const grouped = new Map();
 
     for (const row of data) {
@@ -94,12 +95,19 @@ export function aggregateDaily(data) {
     // Calculate derived values
     const results = [];
     for (const agg of grouped.values()) {
-        // Calculate p85: use direct values if available, otherwise estimate from avg_speed distribution
+        // Calculate p85: prioritize extracted values from raw file (most accurate)
         let p85Value = null;
-        if (agg.p85_values.length > 0) {
+
+        // First choice: Use directly extracted percentile from raw file (radar firmware calculated)
+        if (extractedPercentiles && extractedPercentiles[agg.date]) {
+            p85Value = extractedPercentiles[agg.date].p85 || null;
+        }
+        // Second choice: Use pre-calculated p85 from clean data if available
+        if (p85Value === null && agg.p85_values.length > 0) {
             p85Value = average(agg.p85_values);
-        } else if (agg.speeds.length > 0) {
-            // Estimate 85th percentile from interval average speeds
+        }
+        // Last resort: Estimate from interval averages (less accurate)
+        if (p85Value === null && agg.speeds.length > 0) {
             p85Value = calculate85thPercentile(agg.speeds);
         }
 
@@ -125,9 +133,10 @@ export function aggregateDaily(data) {
 /**
  * Aggregate data by hour (chronological - each hour gets its own entry with date)
  * @param {Array} data - Array of data rows with datetime field
+ * @param {Object} extractedPercentiles - Optional dict of date -> {p50, p85} from raw file
  * @returns {Array} Aggregated data by chronological hour
  */
-export function aggregateHourly(data) {
+export function aggregateHourly(data, extractedPercentiles = null) {
     const grouped = new Map();
 
     for (const row of data) {
@@ -179,11 +188,24 @@ export function aggregateHourly(data) {
     for (const key of sortedKeys) {
         const agg = grouped.get(key);
 
-        // Calculate p85: use direct values if available, otherwise estimate from avg_speed
+        // Get the date portion for looking up extracted percentiles
+        const dt = agg.datetime;
+        const dateKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+
+        // Calculate p85: prioritize extracted values from raw file
         let p85Value = null;
-        if (agg.p85_values.length > 0) {
+
+        // First choice: Use daily extracted percentile from raw file
+        // Note: For hourly view, we use the daily p85 as a reference (same for all hours in a day)
+        if (extractedPercentiles && extractedPercentiles[dateKey]) {
+            p85Value = extractedPercentiles[dateKey].p85 || null;
+        }
+        // Second choice: Use pre-calculated p85 from clean data
+        if (p85Value === null && agg.p85_values.length > 0) {
             p85Value = average(agg.p85_values);
-        } else if (agg.speeds.length > 0) {
+        }
+        // Last resort: Estimate from interval averages
+        if (p85Value === null && agg.speeds.length > 0) {
             p85Value = calculate85thPercentile(agg.speeds);
         }
 
@@ -207,9 +229,10 @@ export function aggregateHourly(data) {
  * Calculate overall statistics for a dataset
  * @param {Array} data - Raw data rows
  * @param {Array} perVehicleData - Optional per-vehicle data for 85th percentile
+ * @param {Object} extractedPercentiles - Optional dict of date -> {p50, p85} from raw file
  * @returns {Object} Statistics object
  */
-export function calculateStats(data, perVehicleData = null) {
+export function calculateStats(data, perVehicleData = null, extractedPercentiles = null) {
     const stats = {
         totalVehicles: 0,
         totalViolators: 0,
@@ -255,16 +278,28 @@ export function calculateStats(data, perVehicleData = null) {
         stats.avgSpeed = sumSpeeds / speedCount;
     }
 
-    // 85th percentile - try multiple sources
-    if (perVehicleData && perVehicleData.length > 0) {
-        // Best: Calculate from per-vehicle speeds
+    // 85th percentile - try multiple sources in order of accuracy
+    // First choice: Use directly extracted percentiles from raw file (radar firmware calculated)
+    if (extractedPercentiles && Object.keys(extractedPercentiles).length > 0) {
+        const extractedP85Values = Object.values(extractedPercentiles)
+            .map(p => p.p85)
+            .filter(v => v && v > 0);
+        if (extractedP85Values.length > 0) {
+            // Use max of daily p85 values as overall p85
+            stats.p85 = Math.max(...extractedP85Values);
+        }
+    }
+    // Second choice: Calculate from per-vehicle speeds
+    if (stats.p85 === null && perVehicleData && perVehicleData.length > 0) {
         const speeds = perVehicleData.map(v => v.speed).filter(s => s > 0);
         stats.p85 = calculate85thPercentile(speeds);
-    } else if (p85Values.length > 0) {
-        // Good: Use pre-calculated values from clean data
+    }
+    // Third choice: Use pre-calculated values from clean data
+    if (stats.p85 === null && p85Values.length > 0) {
         stats.p85 = average(p85Values);
-    } else if (avgSpeeds.length > 0) {
-        // Fallback: Estimate from interval average speeds
+    }
+    // Last resort: Estimate from interval average speeds (least accurate)
+    if (stats.p85 === null && avgSpeeds.length > 0) {
         stats.p85 = calculate85thPercentile(avgSpeeds);
     }
 
@@ -455,9 +490,10 @@ export function aggregateBy24Hour(data) {
 /**
  * Calculate report statistics for PDF header
  * @param {Array} data - Filtered study data
+ * @param {Object} extractedPercentiles - Optional dict of date -> {p50, p85} from raw file
  * @returns {Object} Statistics for report header
  */
-export function calculateReportStatistics(data) {
+export function calculateReportStatistics(data, extractedPercentiles = null) {
     if (!data || data.length === 0) {
         return {
             totalVehicles: 0,
@@ -490,11 +526,25 @@ export function calculateReportStatistics(data) {
         }
     }
 
-    // Calculate p85 - prefer direct values, fallback to estimation
+    // Calculate p85 - prioritize extracted values from raw file
     let p85Speed = null;
-    if (p85Values.length > 0) {
+
+    // First choice: Use directly extracted percentiles from raw file (radar firmware calculated)
+    if (extractedPercentiles && Object.keys(extractedPercentiles).length > 0) {
+        const extractedP85Values = Object.values(extractedPercentiles)
+            .map(p => p.p85)
+            .filter(v => v && v > 0);
+        if (extractedP85Values.length > 0) {
+            // Use max of daily p85 values as overall p85
+            p85Speed = Math.max(...extractedP85Values);
+        }
+    }
+    // Second choice: Use pre-calculated values from clean data
+    if (p85Speed === null && p85Values.length > 0) {
         p85Speed = average(p85Values);
-    } else if (avgSpeeds.length > 0) {
+    }
+    // Last resort: Estimate from interval averages (least accurate)
+    if (p85Speed === null && avgSpeeds.length > 0) {
         p85Speed = calculate85thPercentile(avgSpeeds);
     }
 

@@ -237,13 +237,15 @@ function getChartConfig(chartType, data, options = {}) {
  * @param {string} chartType
  * @param {Array} rawData - Raw study data
  * @param {string} timeAgg - 'daily' or 'hourly'
- * @param {Object} options - Additional options
+ * @param {Object} options - Additional options (showLabels, speedLimit, extractedPercentiles)
  */
 export function createChart(canvas, chartType, rawData, timeAgg = 'daily', options = {}) {
-    // Aggregate data
+    const { extractedPercentiles = null } = options;
+
+    // Aggregate data with extracted percentiles for accurate p85
     const aggregatedData = timeAgg === 'hourly'
-        ? aggregateHourly(rawData)
-        : aggregateDaily(rawData);
+        ? aggregateHourly(rawData, extractedPercentiles)
+        : aggregateDaily(rawData, extractedPercentiles);
 
     // Get chart configuration
     const config = getChartConfig(chartType, aggregatedData, options);

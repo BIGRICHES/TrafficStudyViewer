@@ -26,6 +26,7 @@ function debounce(fn, delay) {
 let currentStudy = null;
 let currentStudyData = null;
 let filteredStudyData = null;
+let extractedPercentiles = null; // For Radar studies - extracted from raw file
 let map = null;
 let markersLayer = null;
 let studyMarkers = new Map(); // Map study_id to marker for zooming
@@ -547,6 +548,12 @@ async function selectStudy(studyId) {
         currentStudyData = await studyIndex.loadStudyData(studyId);
         filteredStudyData = currentStudyData;
 
+        // For Radar studies, extract 85th percentile from raw file
+        extractedPercentiles = null;
+        if (currentStudy.study_type === 'Radar') {
+            extractedPercentiles = await studyIndex.extractRadarPercentiles(studyId);
+        }
+
         // Set date range inputs based on study data
         setDateRangeFromData();
 
@@ -663,7 +670,8 @@ function updateChart() {
         timeAgg,
         {
             showLabels: true,
-            speedLimit: currentStudy.speed_limit || 0
+            speedLimit: currentStudy.speed_limit || 0,
+            extractedPercentiles: extractedPercentiles
         }
     );
 }
@@ -679,7 +687,8 @@ function updateStats() {
         return;
     }
 
-    const stats = calculateStats(filteredStudyData);
+    // Pass extracted percentiles for Radar studies
+    const stats = calculateStats(filteredStudyData, null, extractedPercentiles);
 
     elements.statTotal.textContent = formatNumber(stats.totalVehicles);
     elements.statViolators.textContent = formatNumber(stats.totalViolators);
@@ -1470,31 +1479,48 @@ async function generateReport() {
             firstItem = chartItems[0];
             const firstData = await studyIndex.loadStudyData(chartItems[0].studyId);
             const firstFiltered = filterDataForItem(firstData, chartItems[0]);
-            overallStats = pdfGen.calculateReportStatistics(firstFiltered);
+
+            // Extract percentiles for Radar studies
+            let firstPercentiles = null;
+            if (firstStudy?.study_type === 'Radar') {
+                firstPercentiles = await studyIndex.extractRadarPercentiles(chartItems[0].studyId);
+            }
+            overallStats = pdfGen.calculateReportStatistics(firstFiltered, firstPercentiles);
         }
 
         // Calculate date range for header - only show if all items share the same range
         let dateRangeStr = '';
         if (reportItems.length > 0) {
-            const firstStart = reportItems[0].startDate;
-            const firstEnd = reportItems[0].endDate;
-            const allSameRange = reportItems.every(item =>
-                item.startDate === firstStart && item.endDate === firstEnd
-            );
+            // Get effective date range for each item (either from dates or study range if fullRange)
+            const getEffectiveDates = (item) => {
+                if (item.fullRange && item.studyMeta) {
+                    return {
+                        start: item.studyMeta.start_datetime?.split('T')[0] || item.studyMeta.start_datetime?.split(' ')[0] || '',
+                        end: item.studyMeta.end_datetime?.split('T')[0] || item.studyMeta.end_datetime?.split(' ')[0] || ''
+                    };
+                }
+                return { start: item.startDate || '', end: item.endDate || '' };
+            };
 
-            if (allSameRange && firstStart && firstEnd) {
-                const start = new Date(firstStart);
-                const end = new Date(firstEnd);
+            const firstDates = getEffectiveDates(reportItems[0]);
+            const allSameRange = reportItems.every(item => {
+                const dates = getEffectiveDates(item);
+                return dates.start === firstDates.start && dates.end === firstDates.end;
+            });
+
+            if (allSameRange && firstDates.start && firstDates.end) {
+                const start = new Date(firstDates.start + 'T12:00:00');
+                const end = new Date(firstDates.end + 'T12:00:00');
                 dateRangeStr = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
             }
         }
 
-        let chartY = chartsPerPage === 1 ? 45 : 42;
         let chartsOnPage = 0;
+        let chartY = 0;
 
-        // Draw header on first page
+        // Draw header on first page and get dynamic Y position
         if (chartItems.length > 0) {
-            pdfGen.drawHeader(doc, {
+            const headerEndY = pdfGen.drawHeader(doc, {
                 logoDataUrl,
                 location: firstStudy?.location,
                 direction: firstStudy?.direction,
@@ -1504,6 +1530,9 @@ async function generateReport() {
                 stats: overallStats,
                 isFirstPage: true
             });
+            chartY = headerEndY + 4; // Add spacing after header
+        } else {
+            chartY = 40;
         }
 
         // Process chart items
@@ -1519,29 +1548,36 @@ async function generateReport() {
                 continue;
             }
 
-            // Aggregate data
+            // Extract percentiles for Radar studies
+            let itemPercentiles = null;
+            if (item.studyMeta?.study_type === 'Radar') {
+                itemPercentiles = await studyIndex.extractRadarPercentiles(item.studyId);
+            }
+
+            // Aggregate data with extracted percentiles for accurate p85
             const aggregatedData = item.timeAgg === 'hourly'
-                ? pdfGen.aggregateHourly(filteredData)
-                : pdfGen.aggregateDaily(filteredData);
+                ? pdfGen.aggregateHourly(filteredData, itemPercentiles)
+                : pdfGen.aggregateDaily(filteredData, itemPercentiles);
 
             if (aggregatedData.length === 0) continue;
 
-            const chartHeight = chartsPerPage === 1 ? 110 : 55;
-            const chartSpacing = chartsPerPage === 1 ? 120 : 62;
+            // Larger chart sizes for better readability
+            const chartHeight = chartsPerPage === 1 ? 180 : 100;
+            const chartSpacing = chartsPerPage === 1 ? 190 : 115;
 
             // Check if need new page
             if (chartsOnPage >= chartsPerPage) {
                 doc.addPage();
-                chartY = 26;
                 chartsOnPage = 0;
 
-                // Continuation header
-                pdfGen.drawHeader(doc, {
+                // Continuation header - use dynamic Y position
+                const headerEndY = pdfGen.drawHeader(doc, {
                     logoDataUrl,
                     location: item.studyMeta?.location,
                     direction: item.studyMeta?.direction,
                     isContinuation: true
                 });
+                chartY = headerEndY + 4;
             }
 
             // Build chart title
