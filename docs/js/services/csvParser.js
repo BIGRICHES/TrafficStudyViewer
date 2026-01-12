@@ -40,10 +40,10 @@ export async function parseStudyIndex(csvContent) {
 
     // Process each row
     return result.data.map(row => ({
-        study_id: String(row.study_id || ''),
+        study_id: String(row.study_id ?? ''),
         file_path: row.file_path || '',
         study_type: row.study_type || '',
-        counter_number: row.counter_number || '',
+        counter_number: String(row.counter_number ?? ''),
         location: row.location || '',
         direction: normalizeDirection(row.direction || ''),
         speed_limit: parseFloat(row.speed_limit) || 0,

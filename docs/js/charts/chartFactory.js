@@ -72,15 +72,17 @@ function getChartConfig(chartType, data, options = {}) {
 
         case 'pct-speeders':
             return {
-                type: 'bar',
+                type: 'line',
                 data: {
                     labels,
                     datasets: [
                         {
                             label: '% Speeders',
                             data: data.map(d => d.pct_speeders),
-                            backgroundColor: CHART_COLORS.violators,
-                            borderRadius: 4
+                            borderColor: CHART_COLORS.violators,
+                            backgroundColor: CHART_COLORS.violators + '40',
+                            fill: false,
+                            tension: 0.3
                         }
                     ]
                 },
@@ -94,6 +96,14 @@ function getChartConfig(chartType, data, options = {}) {
                             title: { display: true, text: 'Percentage' },
                             ticks: { callback: v => v + '%' }
                         }
+                    },
+                    plugins: {
+                        ...baseConfig.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            align: 'top',
+                            formatter: (value) => value?.toFixed(1) + '%'
+                        } : { display: false }
                     }
                 }
             };
@@ -142,6 +152,14 @@ function getChartConfig(chartType, data, options = {}) {
                             beginAtZero: false,
                             title: { display: true, text: 'Speed (mph)' }
                         }
+                    },
+                    plugins: {
+                        ...baseConfig.plugins,
+                        datalabels: showLabels ? {
+                            display: true,
+                            align: 'top',
+                            formatter: (value) => value?.toFixed(1)
+                        } : { display: false }
                     }
                 }
             };

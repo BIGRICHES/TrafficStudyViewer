@@ -117,14 +117,7 @@ const elements = {
     chartModalStartTime: document.getElementById('chart-modal-start-time'),
     chartModalEndDate: document.getElementById('chart-modal-end-date'),
     chartModalEndTime: document.getElementById('chart-modal-end-time'),
-    chartModalTimeFilter: document.getElementById('chart-modal-time-filter'),
-    chartModalTimeRange: document.getElementById('chart-modal-time-range'),
-    chartModalTimeStart: document.getElementById('chart-modal-time-start'),
-    chartModalTimeEnd: document.getElementById('chart-modal-time-end'),
     chartModalShowLabels: document.getElementById('chart-modal-show-labels'),
-    presetSchool: document.getElementById('preset-school'),
-    presetRushAm: document.getElementById('preset-rush-am'),
-    presetRushPm: document.getElementById('preset-rush-pm'),
 
     // Data Table Modal
     addTableBtn: document.getElementById('add-table-btn'),
@@ -220,12 +213,6 @@ function setupEventListeners() {
     elements.chartStudySearch.addEventListener('input', debounce(filterStudyDropdown, 200));
     elements.chartStudySearch.addEventListener('focus', filterStudyDropdown);
     elements.chartModalFullRange.addEventListener('change', toggleDateRange);
-    elements.chartModalTimeFilter.addEventListener('change', toggleTimeFilter);
-
-    // Time presets
-    elements.presetSchool.addEventListener('click', () => setTimePreset('07:00', '09:00'));
-    elements.presetRushAm.addEventListener('click', () => setTimePreset('06:30', '09:00'));
-    elements.presetRushPm.addEventListener('click', () => setTimePreset('16:00', '18:30'));
 
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
@@ -408,8 +395,8 @@ function updateStudyList() {
     if (query) {
         studies = studies.filter(s => {
             const location = (s.location || '').toLowerCase();
-            const counter = (s.counter_number || '').toLowerCase();
-            const id = (s.study_id || '').toLowerCase();
+            const counter = String(s.counter_number ?? '').toLowerCase();
+            const id = String(s.study_id ?? '').toLowerCase();
             return location.includes(query) || counter.includes(query) || id.includes(query);
         });
     }
@@ -757,8 +744,8 @@ function updateMapMarkers() {
     if (query) {
         studies = studies.filter(s => {
             const location = (s.location || '').toLowerCase();
-            const counter = (s.counter_number || '').toLowerCase();
-            const id = (s.study_id || '').toLowerCase();
+            const counter = String(s.counter_number ?? '').toLowerCase();
+            const id = String(s.study_id ?? '').toLowerCase();
             return location.includes(query) || counter.includes(query) || id.includes(query);
         });
     }
@@ -958,12 +945,6 @@ window.openEditChartModal = function(index) {
     elements.chartModalEndTime.value = item.endTime || '23:59';
     elements.chartModalShowLabels.checked = item.showLabels;
 
-    // Time filter
-    elements.chartModalTimeFilter.checked = item.timeFilterEnabled;
-    elements.chartModalTimeRange.style.display = item.timeFilterEnabled ? 'flex' : 'none';
-    elements.chartModalTimeStart.value = item.timeStart || '07:00';
-    elements.chartModalTimeEnd.value = item.timeEnd || '18:00';
-
     elements.chartModal.style.display = 'flex';
 }
 
@@ -986,21 +967,10 @@ function resetChartModal() {
     elements.chartModalEndDate.value = '';
     elements.chartModalEndTime.value = '23:59';
     elements.chartModalShowLabels.checked = true;
-    elements.chartModalTimeFilter.checked = false;
-    elements.chartModalTimeRange.style.display = 'none';
 }
 
 function toggleDateRange() {
     elements.chartModalDateRange.style.display = elements.chartModalFullRange.checked ? 'none' : 'flex';
-}
-
-function toggleTimeFilter() {
-    elements.chartModalTimeRange.style.display = elements.chartModalTimeFilter.checked ? 'flex' : 'none';
-}
-
-function setTimePreset(start, end) {
-    elements.chartModalTimeStart.value = start;
-    elements.chartModalTimeEnd.value = end;
 }
 
 function filterStudyDropdown() {
@@ -1010,8 +980,8 @@ function filterStudyDropdown() {
     if (query) {
         studies = studies.filter(s => {
             const location = (s.location || '').toLowerCase();
-            const counter = (s.counter_number || '').toLowerCase();
-            const id = (s.study_id || '').toLowerCase();
+            const counter = String(s.counter_number ?? '').toLowerCase();
+            const id = String(s.study_id ?? '').toLowerCase();
             return location.includes(query) || counter.includes(query) || id.includes(query);
         });
     }
@@ -1077,9 +1047,6 @@ function saveChartItem() {
         startTime: elements.chartModalStartTime.value,
         endDate: elements.chartModalEndDate.value,
         endTime: elements.chartModalEndTime.value,
-        timeFilterEnabled: elements.chartModalTimeFilter.checked,
-        timeStart: elements.chartModalTimeStart.value,
-        timeEnd: elements.chartModalTimeEnd.value,
         showLabels: elements.chartModalShowLabels.checked
     };
 
@@ -1133,9 +1100,6 @@ function renderReportItems() {
         } else {
             if (!item.fullRange && item.startDate) {
                 filters.push(`${item.startDate} to ${item.endDate}`);
-            }
-            if (item.timeFilterEnabled) {
-                filters.push(`${item.timeStart}-${item.timeEnd}`);
             }
         }
         const filterStr = filters.length > 0 ? ` (${filters.join(', ')})` : '';
@@ -1332,8 +1296,8 @@ function filterTableStudyDropdown() {
     if (query) {
         studies = studies.filter(s => {
             const location = (s.location || '').toLowerCase();
-            const counter = (s.counter_number || '').toLowerCase();
-            const id = (s.study_id || '').toLowerCase();
+            const counter = String(s.counter_number ?? '').toLowerCase();
+            const id = String(s.study_id ?? '').toLowerCase();
             return location.includes(query) || counter.includes(query) || id.includes(query);
         });
     }
@@ -1451,12 +1415,6 @@ function filterDataForItem(data, item) {
                 const end = new Date(item.endDate + 'T' + endTime + ':59');
                 if (dt > end) return false;
             }
-        }
-
-        // Time of day filter
-        if (item.timeFilterEnabled) {
-            const timeStr = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
-            if (timeStr < item.timeStart || timeStr > item.timeEnd) return false;
         }
 
         return true;
