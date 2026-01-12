@@ -285,8 +285,8 @@ export function calculateStats(data, perVehicleData = null, extractedPercentiles
             .map(p => p.p85)
             .filter(v => v && v > 0);
         if (extractedP85Values.length > 0) {
-            // Use max of daily p85 values as overall p85
-            stats.p85 = Math.max(...extractedP85Values);
+            // Use average of daily p85 values as overall p85
+            stats.p85 = average(extractedP85Values);
         }
     }
     // Second choice: Calculate from per-vehicle speeds
@@ -535,8 +535,8 @@ export function calculateReportStatistics(data, extractedPercentiles = null) {
             .map(p => p.p85)
             .filter(v => v && v > 0);
         if (extractedP85Values.length > 0) {
-            // Use max of daily p85 values as overall p85
-            p85Speed = Math.max(...extractedP85Values);
+            // Use average of daily p85 values as overall p85
+            p85Speed = average(extractedP85Values);
         }
     }
     // Second choice: Use pre-calculated values from clean data
