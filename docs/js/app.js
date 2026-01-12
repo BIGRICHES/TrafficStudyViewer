@@ -54,8 +54,7 @@ const elements = {
     // Sidebar
     searchInput: document.getElementById('search-input'),
     filterType: document.getElementById('filter-type'),
-    filterStartDate: document.getElementById('filter-start-date'),
-    filterEndDate: document.getElementById('filter-end-date'),
+    filterDate: document.getElementById('filter-date'),
     studyList: document.getElementById('study-list'),
     studyCount: document.getElementById('study-count'),
 
@@ -210,8 +209,7 @@ function setupEventListeners() {
 
     elements.searchInput.addEventListener('input', debounce(updateStudyList, 300));
     elements.filterType.addEventListener('change', updateStudyList);
-    elements.filterStartDate.addEventListener('change', updateStudyList);
-    elements.filterEndDate.addEventListener('change', updateStudyList);
+    elements.filterDate.addEventListener('change', updateStudyList);
 
     elements.tabs.forEach(tab => {
         tab.addEventListener('click', () => switchTab(tab.dataset.tab));
@@ -445,8 +443,7 @@ async function loadAndShowApp() {
 function updateStudyList() {
     const query = elements.searchInput.value.toLowerCase().trim();
     const filterType = elements.filterType.value;
-    const filterStartDate = elements.filterStartDate.value;
-    const filterEndDate = elements.filterEndDate.value;
+    const filterDate = elements.filterDate.value;
 
     let studies = studyIndex.getAll();
 
@@ -461,20 +458,20 @@ function updateStudyList() {
     if (filterType) {
         studies = studies.filter(s => s.study_type === filterType);
     }
-    // Date range filter - show studies that overlap with the filter range
-    if (filterStartDate || filterEndDate) {
+    // Date filter - show studies that were active on the selected date
+    if (filterDate) {
+        const targetDate = new Date(filterDate);
+        const targetEnd = new Date(filterDate + 'T23:59:59');
         studies = studies.filter(s => {
             const studyStart = s.start_datetime ? new Date(s.start_datetime) : null;
             const studyEnd = s.end_datetime ? new Date(s.end_datetime) : null;
-            const filterStart = filterStartDate ? new Date(filterStartDate) : null;
-            const filterEnd = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
 
             // If study has no dates, include it
             if (!studyStart && !studyEnd) return true;
 
-            // Check for overlap: study ends before filter starts OR study starts after filter ends
-            if (filterStart && studyEnd && studyEnd < filterStart) return false;
-            if (filterEnd && studyStart && studyStart > filterEnd) return false;
+            // Check if target date falls within study range
+            if (studyStart && targetEnd < studyStart) return false;
+            if (studyEnd && targetDate > studyEnd) return false;
 
             return true;
         });
@@ -801,8 +798,7 @@ function updateMapMarkers() {
     // Use same filters as sidebar
     const query = elements.searchInput.value.toLowerCase().trim();
     const filterType = elements.filterType.value;
-    const filterStartDate = elements.filterStartDate.value;
-    const filterEndDate = elements.filterEndDate.value;
+    const filterDate = elements.filterDate.value;
 
     let studies = studyIndex.getWithCoordinates();
 
@@ -821,17 +817,17 @@ function updateMapMarkers() {
         studies = studies.filter(s => s.study_type === filterType);
     }
 
-    // Apply date range filter
-    if (filterStartDate || filterEndDate) {
+    // Apply date filter - show studies that were active on the selected date
+    if (filterDate) {
+        const targetDate = new Date(filterDate);
+        const targetEnd = new Date(filterDate + 'T23:59:59');
         studies = studies.filter(s => {
             const studyStart = s.start_datetime ? new Date(s.start_datetime) : null;
             const studyEnd = s.end_datetime ? new Date(s.end_datetime) : null;
-            const filterStart = filterStartDate ? new Date(filterStartDate) : null;
-            const filterEnd = filterEndDate ? new Date(filterEndDate + 'T23:59:59') : null;
 
             if (!studyStart && !studyEnd) return true;
-            if (filterStart && studyEnd && studyEnd < filterStart) return false;
-            if (filterEnd && studyStart && studyStart > filterEnd) return false;
+            if (studyStart && targetEnd < studyStart) return false;
+            if (studyEnd && targetDate > studyEnd) return false;
 
             return true;
         });
