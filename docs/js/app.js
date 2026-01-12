@@ -1494,9 +1494,21 @@ async function generateReport() {
             // Get effective date range for each item (either from dates or study range if fullRange)
             const getEffectiveDates = (item) => {
                 if (item.fullRange && item.studyMeta) {
+                    // Handle different date formats: "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", "MM/DD/YYYY", etc.
+                    const extractDate = (dateStr) => {
+                        if (!dateStr) return '';
+                        // If it contains T or space, split and take first part
+                        let datePart = dateStr.split('T')[0].split(' ')[0];
+                        // If it's MM/DD/YYYY format, convert to YYYY-MM-DD
+                        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(datePart)) {
+                            const parts = datePart.split('/');
+                            datePart = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+                        }
+                        return datePart;
+                    };
                     return {
-                        start: item.studyMeta.start_datetime?.split('T')[0] || item.studyMeta.start_datetime?.split(' ')[0] || '',
-                        end: item.studyMeta.end_datetime?.split('T')[0] || item.studyMeta.end_datetime?.split(' ')[0] || ''
+                        start: extractDate(item.studyMeta.start_datetime),
+                        end: extractDate(item.studyMeta.end_datetime)
                     };
                 }
                 return { start: item.startDate || '', end: item.endDate || '' };
@@ -1511,7 +1523,10 @@ async function generateReport() {
             if (allSameRange && firstDates.start && firstDates.end) {
                 const start = new Date(firstDates.start + 'T12:00:00');
                 const end = new Date(firstDates.end + 'T12:00:00');
-                dateRangeStr = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+                // Only set date range if dates are valid
+                if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                    dateRangeStr = `${start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+                }
             }
         }
 
@@ -1530,7 +1545,7 @@ async function generateReport() {
                 stats: overallStats,
                 isFirstPage: true
             });
-            chartY = headerEndY + 4; // Add spacing after header
+            chartY = headerEndY + 12; // Add spacing after header for chart title
         } else {
             chartY = 40;
         }
@@ -1577,7 +1592,7 @@ async function generateReport() {
                     direction: item.studyMeta?.direction,
                     isContinuation: true
                 });
-                chartY = headerEndY + 4;
+                chartY = headerEndY + 12; // Add spacing for chart title
             }
 
             // Build chart title
