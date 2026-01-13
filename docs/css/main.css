@@ -1342,6 +1342,11 @@ body {
     color: #92400e;
 }
 
+.pending-item-status.sent {
+    background: #e0e7ff;
+    color: #4338ca;
+}
+
 .pending-item-status.in-progress {
     background: #dbeafe;
     color: #1e40af;
@@ -1474,6 +1479,11 @@ body {
     border-color: #f59e0b;
 }
 
+.status-btn.active[data-value="sent"] {
+    background: #6366f1;
+    border-color: #6366f1;
+}
+
 .status-btn.active[data-value="in-progress"] {
     background: #3b82f6;
     border-color: #3b82f6;
@@ -1538,6 +1548,11 @@ body {
     text-transform: uppercase;
 }
 
+.pending-type-badge.any {
+    background: #8b5cf6;
+    color: white;
+}
+
 .pending-type-badge.radar {
     background: #5470C6;
     color: white;
@@ -1551,4 +1566,38 @@ body {
 .pending-type-badge.jamar-tube {
     background: #EE6666;
     color: white;
+}
+
+/* Satellite toggle button */
+#satellite-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+#satellite-toggle-btn.active {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+/* Multi-select button group hint */
+.button-group.multi-select .type-btn.active {
+    position: relative;
+}
+
+.button-group.multi-select .type-btn:not(.active):hover::after {
+    content: '+';
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }

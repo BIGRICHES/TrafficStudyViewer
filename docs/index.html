@@ -129,6 +129,14 @@
                     <div id="map-tab" class="tab-pane active">
                         <div class="map-controls">
                             <span id="map-study-count" class="badge">0 studies</span>
+                            <button id="satellite-toggle-btn" class="btn btn-small" title="Toggle satellite view">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                                </svg>
+                                Satellite
+                            </button>
                         </div>
                         <div id="map-container"></div>
                     </div>
@@ -397,6 +405,7 @@
                             <div class="pending-filters">
                                 <button class="filter-btn active" data-filter="all">All</button>
                                 <button class="filter-btn" data-filter="pending">Pending</button>
+                                <button class="filter-btn" data-filter="sent">Sent</button>
                                 <button class="filter-btn" data-filter="in-progress">In Progress</button>
                                 <button class="filter-btn" data-filter="complete">Complete</button>
                             </div>
@@ -425,11 +434,13 @@
 
                                     <div class="form-group">
                                         <label>Study Type <span class="required">*</span></label>
-                                        <div class="button-group" id="pending-type-group">
+                                        <div class="button-group multi-select" id="pending-type-group">
+                                            <button type="button" class="type-btn" data-value="Any">Any</button>
                                             <button type="button" class="type-btn" data-value="Radar">Radar</button>
                                             <button type="button" class="type-btn" data-value="TimeMark Tube">TimeMark Tube</button>
                                             <button type="button" class="type-btn" data-value="Jamar Tube">Jamar Tube</button>
                                         </div>
+                                        <p class="help-text" style="margin-top: 0.25rem; font-size: 0.75rem;">Select one or more types</p>
                                     </div>
 
                                     <div class="form-row">
@@ -456,6 +467,7 @@
                                         <label>Status</label>
                                         <div class="button-group" id="pending-status-group">
                                             <button type="button" class="status-btn active" data-value="pending">Pending</button>
+                                            <button type="button" class="status-btn" data-value="sent">Sent</button>
                                             <button type="button" class="status-btn" data-value="in-progress">In Progress</button>
                                             <button type="button" class="status-btn" data-value="complete">Complete</button>
                                         </div>
@@ -497,6 +509,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- App Modules -->
-    <script type="module" src="js/app.js?v=13"></script>
+    <script type="module" src="js/app.js?v=14"></script>
 </body>
 </html>

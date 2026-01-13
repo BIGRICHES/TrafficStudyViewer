@@ -29,7 +29,12 @@ let filteredStudyData = null;
 let extractedPercentiles = null; // For Radar studies - extracted from raw file
 let map = null;
 let markersLayer = null;
+let streetLayer = null;
+let satelliteLayer = null;
+let isSatelliteView = false;
 let studyMarkers = new Map(); // Map study_id to marker for zooming
+let expandedLinkGroup = null; // Currently expanded linked group markers
+let expandedMarkers = []; // Temporary markers for expanded linked studies
 let isDarkTheme = false;
 let expandedGroups = new Set();
 
@@ -90,6 +95,7 @@ const elements = {
     // Map
     mapContainer: document.getElementById('map-container'),
     mapStudyCount: document.getElementById('map-study-count'),
+    satelliteToggleBtn: document.getElementById('satellite-toggle-btn'),
 
     // Reports - Advanced Builder
     reportTitle: document.getElementById('report-title'),
@@ -306,6 +312,11 @@ function setupEventListeners() {
 
     // Button group toggle handlers (type, priority, status)
     setupButtonGroupToggles();
+
+    // Satellite toggle
+    if (elements.satelliteToggleBtn) {
+        elements.satelliteToggleBtn.addEventListener('click', toggleSatelliteView);
+    }
 }
 
 // ============ Folder Handling ============
@@ -778,15 +789,67 @@ function initMap() {
 
     map = L.map(elements.mapContainer).setView([MAP_CENTER.lat, MAP_CENTER.lon], MAP_CENTER.zoom);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Street layer (default)
+    streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    });
+
+    // Satellite layer (Esri World Imagery)
+    satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+    });
+
+    // Add default layer
+    streetLayer.addTo(map);
 
     markersLayer = L.layerGroup().addTo(map);
+
+    // Collapse expanded markers when clicking on map
+    map.on('click', (e) => {
+        // Check if clicked on a marker or popup - if not, collapse expanded markers
+        if (!e.originalEvent.target.closest('.leaflet-marker-icon') && !e.originalEvent.target.closest('.leaflet-popup')) {
+            collapseExpandedMarkers();
+        }
+    });
+
+    // Collapse when popup closes
+    map.on('popupclose', () => {
+        collapseExpandedMarkers();
+    });
 
     updateMapMarkers();
 
     setTimeout(() => map.invalidateSize(), 100);
+}
+
+function toggleSatelliteView() {
+    isSatelliteView = !isSatelliteView;
+
+    if (isSatelliteView) {
+        map.removeLayer(streetLayer);
+        map.addLayer(satelliteLayer);
+        elements.satelliteToggleBtn.classList.add('active');
+        elements.satelliteToggleBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            Street
+        `;
+    } else {
+        map.removeLayer(satelliteLayer);
+        map.addLayer(streetLayer);
+        elements.satelliteToggleBtn.classList.remove('active');
+        elements.satelliteToggleBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            Satellite
+        `;
+    }
 }
 
 function updateMapMarkers() {
@@ -881,6 +944,7 @@ function addLinkedMarker(studies) {
     const firstType = studies[0].study_type;
     const allSameType = studies.every(s => s.study_type === firstType);
     const markerColor = allSameType ? getMarkerColor(firstType) : '#9333ea';
+    const linkGroup = studies[0].link_group;
 
     let popupHtml = `<div class="popup-title">🔗 ${escapeHtml(studies[0].location)}</div><hr style="margin:8px 0">`;
 
@@ -902,10 +966,73 @@ function addLinkedMarker(studies) {
     });
 
     const marker = L.marker([centLat, centLon], { icon }).bindPopup(popupHtml, { maxWidth: 300, maxHeight: 400 });
+
+    // On marker click, expand linked studies to their actual coordinates
+    marker.on('click', (e) => {
+        // Collapse any previously expanded group first
+        collapseExpandedMarkers();
+
+        // Store the link group for this expansion
+        expandedLinkGroup = linkGroup;
+
+        // Hide the combined marker
+        marker.setOpacity(0);
+
+        // Create individual markers at actual coordinates
+        studies.forEach(s => {
+            const color = getMarkerColor(s.study_type);
+            const expandedIcon = L.divIcon({
+                className: 'expanded-marker',
+                html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            const expandedPopup = `
+                <div class="popup-title">${escapeHtml(s.location)}</div>
+                <div class="popup-info">
+                    <div><strong>Direction:</strong> ${s.direction || 'N/A'}</div>
+                    <div><strong>Type:</strong> ${s.study_type}</div>
+                    <div><strong>Dates:</strong> ${formatDateRange(s.start_datetime, s.end_datetime)}</div>
+                    ${s.speed_limit ? `<div><strong>Speed Limit:</strong> ${s.speed_limit} mph</div>` : ''}
+                </div>
+                <button class="popup-btn" onclick="window.viewStudy('${s.study_id}')">View Study</button>
+            `;
+
+            const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                .bindPopup(expandedPopup)
+                .addTo(map);
+
+            expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
+        });
+    });
+
     markersLayer.addLayer(marker);
 
     // Store marker for each study in this group
-    studies.forEach(s => studyMarkers.set(s.study_id, marker));
+    studies.forEach(s => studyMarkers.set(s.study_id, { marker, linkGroup, studies }));
+}
+
+function collapseExpandedMarkers() {
+    if (expandedMarkers.length === 0) return;
+
+    // Remove expanded markers from map
+    expandedMarkers.forEach(({ marker }) => {
+        map.removeLayer(marker);
+    });
+    expandedMarkers = [];
+
+    // Restore the combined marker opacity
+    if (expandedLinkGroup) {
+        // Find the combined marker and restore it
+        studyMarkers.forEach((value) => {
+            if (value.linkGroup === expandedLinkGroup && value.marker) {
+                value.marker.setOpacity(1);
+            }
+        });
+    }
+
+    expandedLinkGroup = null;
 }
 
 function addSingleMarker(study) {
@@ -930,9 +1057,16 @@ function addSingleMarker(study) {
     });
 
     const marker = L.marker([study.lat, study.lon], { icon }).bindPopup(popupHtml);
+
+    // Collapse any expanded markers when clicking a single marker
+    marker.on('click', () => {
+        collapseExpandedMarkers();
+    });
+
     markersLayer.addLayer(marker);
 
-    studyMarkers.set(study.study_id, marker);
+    // Store as object for consistency with linked markers
+    studyMarkers.set(study.study_id, { marker, linkGroup: null, studies: null });
 }
 
 function zoomToStudy(studyId) {
@@ -945,9 +1079,13 @@ function zoomToStudy(studyId) {
     map.setView([study.lat, study.lon], 15, { animate: true });
 
     // Open the popup for this study's marker
-    const marker = studyMarkers.get(studyId);
-    if (marker) {
-        marker.openPopup();
+    const markerData = studyMarkers.get(studyId);
+    if (markerData) {
+        // Check if it's a linked marker (object with marker property) or single marker
+        const marker = markerData.marker || markerData;
+        if (marker && marker.openPopup) {
+            marker.openPopup();
+        }
     }
 }
 
@@ -1760,17 +1898,29 @@ function updateReportPanel() {
 // ============ Pending Studies ============
 
 function setupButtonGroupToggles() {
-    // Type buttons
+    // Type buttons - MULTI-SELECT (toggle behavior)
     if (elements.pendingTypeGroup) {
         elements.pendingTypeGroup.querySelectorAll('.type-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                elements.pendingTypeGroup.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
+                // Toggle this button
+                btn.classList.toggle('active');
+
+                // If "Any" is clicked and now active, deselect all others
+                if (btn.dataset.value === 'Any' && btn.classList.contains('active')) {
+                    elements.pendingTypeGroup.querySelectorAll('.type-btn').forEach(b => {
+                        if (b !== btn) b.classList.remove('active');
+                    });
+                }
+                // If a non-Any button is clicked, deselect "Any"
+                else if (btn.dataset.value !== 'Any' && btn.classList.contains('active')) {
+                    const anyBtn = elements.pendingTypeGroup.querySelector('[data-value="Any"]');
+                    if (anyBtn) anyBtn.classList.remove('active');
+                }
             });
         });
     }
 
-    // Priority buttons
+    // Priority buttons - single select
     if (elements.pendingPriorityGroup) {
         elements.pendingPriorityGroup.querySelectorAll('.priority-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1780,7 +1930,7 @@ function setupButtonGroupToggles() {
         });
     }
 
-    // Status buttons
+    // Status buttons - single select
     if (elements.pendingStatusGroup) {
         elements.pendingStatusGroup.querySelectorAll('.status-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1839,8 +1989,8 @@ function renderPendingList() {
         if (priorityDiff !== 0) return priorityDiff;
 
         // Within same priority, sort by date requested (earliest first)
-        const dateA = a.dateRequested ? new Date(a.dateRequested) : new Date('9999-12-31');
-        const dateB = b.dateRequested ? new Date(b.dateRequested) : new Date('9999-12-31');
+        const dateA = a.dateRequested ? new Date(a.dateRequested + 'T12:00:00') : new Date('9999-12-31');
+        const dateB = b.dateRequested ? new Date(b.dateRequested + 'T12:00:00') : new Date('9999-12-31');
         return dateA - dateB;
     });
 
@@ -1859,12 +2009,24 @@ function renderPendingList() {
 
     elements.pendingList.innerHTML = filtered.map(study => {
         const statusClass = study.status;
-        const statusLabel = study.status === 'in-progress' ? 'In Progress'
-            : study.status.charAt(0).toUpperCase() + study.status.slice(1);
+        const statusLabels = {
+            'pending': 'Pending',
+            'sent': 'Sent',
+            'in-progress': 'In Progress',
+            'complete': 'Complete'
+        };
+        const statusLabel = statusLabels[study.status] || study.status;
 
-        const typeClass = study.type.toLowerCase().replace(/\s+/g, '-');
+        // Handle type as array or string (backwards compatibility)
+        const types = Array.isArray(study.type) ? study.type : (study.type ? [study.type] : []);
+        const typeBadges = types.map(t => {
+            const typeClass = t.toLowerCase().replace(/\s+/g, '-');
+            return `<span class="pending-type-badge ${typeClass}">${t}</span>`;
+        }).join(' ');
+
+        // Fix timezone issue: add time component to prevent date shift
         const dateStr = study.dateRequested
-            ? new Date(study.dateRequested).toLocaleDateString()
+            ? new Date(study.dateRequested + 'T12:00:00').toLocaleDateString()
             : '';
 
         return `
@@ -1876,7 +2038,7 @@ function renderPendingList() {
                         <span class="pending-item-status ${statusClass}">${statusLabel}</span>
                     </div>
                     <div class="pending-item-meta">
-                        <span class="pending-type-badge ${typeClass}">${study.type}</span>
+                        ${typeBadges}
                         ${study.requestedBy ? `<span>By: ${escapeHtml(study.requestedBy)}</span>` : ''}
                         ${dateStr ? `<span>Requested: ${dateStr}</span>` : ''}
                     </div>
@@ -1929,8 +2091,9 @@ window.editPendingStudy = function(id) {
     elements.pendingDate.value = study.dateRequested || '';
     elements.pendingNotes.value = study.notes || '';
 
-    // Set button groups
-    resetButtonGroup(elements.pendingTypeGroup, study.type);
+    // Set button groups - type can be array or string (for backwards compatibility)
+    const typeValue = Array.isArray(study.type) ? study.type : (study.type ? [study.type] : []);
+    resetButtonGroup(elements.pendingTypeGroup, typeValue);
     resetButtonGroup(elements.pendingPriorityGroup, study.priority);
     resetButtonGroup(elements.pendingStatusGroup, study.status);
 
@@ -1958,18 +2121,28 @@ window.markPendingPending = function(id) {
 function resetButtonGroup(groupEl, activeValue) {
     if (!groupEl) return;
     const buttons = groupEl.querySelectorAll('button');
+
+    // Handle array of values for multi-select
+    const activeValues = Array.isArray(activeValue) ? activeValue : (activeValue ? [activeValue] : []);
+
     buttons.forEach(btn => {
         btn.classList.remove('active');
-        if (activeValue && btn.dataset.value === activeValue) {
+        if (activeValues.includes(btn.dataset.value)) {
             btn.classList.add('active');
         }
     });
 }
 
-function getButtonGroupValue(groupEl) {
-    if (!groupEl) return null;
-    const activeBtn = groupEl.querySelector('.active');
-    return activeBtn ? activeBtn.dataset.value : null;
+function getButtonGroupValue(groupEl, multiSelect = false) {
+    if (!groupEl) return multiSelect ? [] : null;
+
+    if (multiSelect) {
+        const activeBtns = groupEl.querySelectorAll('.active');
+        return Array.from(activeBtns).map(btn => btn.dataset.value);
+    } else {
+        const activeBtn = groupEl.querySelector('.active');
+        return activeBtn ? activeBtn.dataset.value : null;
+    }
 }
 
 function closePendingModal() {
@@ -1984,15 +2157,16 @@ async function savePendingStudy() {
         return;
     }
 
-    const type = getButtonGroupValue(elements.pendingTypeGroup);
-    if (!type) {
-        alert('Please select a study type');
+    // Get types as array (multi-select)
+    const types = getButtonGroupValue(elements.pendingTypeGroup, true);
+    if (types.length === 0) {
+        alert('Please select at least one study type');
         return;
     }
 
     const studyData = {
         location,
-        type,
+        type: types, // Now stored as array
         requestedBy: elements.pendingRequestedBy.value.trim(),
         dateRequested: elements.pendingDate.value,
         priority: getButtonGroupValue(elements.pendingPriorityGroup) || 'normal',
