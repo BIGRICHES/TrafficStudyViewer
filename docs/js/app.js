@@ -547,6 +547,7 @@ function createStudyItem(study) {
             <div class="study-item-title">${escapeHtml(study.location)}</div>
             <div class="study-item-meta">
                 <span class="type-badge ${typeClass}">${study.study_type}</span>
+                ${study.counter_number ? `<span>#${study.counter_number}</span>` : ''}
                 ${study.direction ? `<span>${study.direction}</span>` : ''}
                 <span>${formatDateRange(study.start_datetime, study.end_datetime)}</span>
             </div>
@@ -579,6 +580,7 @@ function createLinkedGroupItem(linkGroup, studies) {
                 <div class="study-item-title">${study.direction || 'Unknown Direction'}</div>
                 <div class="study-item-meta">
                     <span class="type-badge ${typeClass}">${study.study_type}</span>
+                    ${study.counter_number ? `<span>#${study.counter_number}</span>` : ''}
                     <span>${formatDateRange(study.start_datetime, study.end_datetime)}</span>
                 </div>
             </div>
@@ -1100,8 +1102,13 @@ function addLinkedMarker(studies) {
         // Calculate bounds for all studies in group
         const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
 
-        // Zoom to fit all expanded markers with padding
-        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+        // Only zoom in if needed - never zoom out
+        const currentZoom = map.getZoom();
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17, animate: true });
+        // If fitBounds zoomed out, restore previous zoom
+        if (map.getZoom() < currentZoom) {
+            map.setZoom(currentZoom);
+        }
 
         // Create individual markers at actual coordinates (no popups)
         studies.forEach((s, index) => {
@@ -1258,8 +1265,17 @@ function zoomToStudy(studyId) {
             // Calculate bounds for all studies in group
             const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
 
-            // Zoom to fit all expanded markers with padding
-            map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+            // Only zoom if needed - never zoom out, only in
+            const currentZoom = map.getZoom();
+            map.fitBounds(bounds, {
+                padding: [80, 80],
+                maxZoom: 17,
+                animate: true
+            });
+            // If fitBounds zoomed out, restore previous zoom
+            if (map.getZoom() < currentZoom) {
+                map.setZoom(currentZoom);
+            }
 
             // Create individual markers at actual coordinates (no popups)
             markerData.studies.forEach((s) => {
@@ -1295,9 +1311,12 @@ function zoomToStudy(studyId) {
             updateExpandedMarkerSelection(studyId);
         }
     } else {
-        // Single study - zoom and update selection visual
+        // Single study - pan to location without changing zoom (never zoom out)
         collapseExpandedMarkers();
-        map.setView([study.lat, study.lon], 15, { animate: true });
+        const currentZoom = map.getZoom();
+        // Only zoom in if currently at a lower zoom level than 15
+        const targetZoom = Math.max(currentZoom, 15);
+        map.setView([study.lat, study.lon], targetZoom, { animate: true });
 
         // Update single marker selection visual
         updateSingleMarkerSelection(studyId);
