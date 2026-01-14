@@ -85,7 +85,6 @@
             <aside class="sidebar">
                 <div class="sidebar-header">
                     <h2>Studies</h2>
-                    <span id="study-count" class="badge">0</span>
                 </div>
 
                 <!-- Search -->
@@ -127,17 +126,6 @@
                 <div class="tab-content">
                     <!-- Map Tab -->
                     <div id="map-tab" class="tab-pane active">
-                        <div class="map-controls">
-                            <span id="map-study-count" class="badge">0 studies</span>
-                            <button id="satellite-toggle-btn" class="btn btn-small" title="Toggle satellite view">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                                </svg>
-                                Satellite
-                            </button>
-                        </div>
                         <div id="map-container"></div>
                     </div>
 
@@ -153,6 +141,7 @@
                                 <h3 id="study-title">Study Title</h3>
                                 <div class="study-meta">
                                     <span id="study-type-badge" class="type-badge">Type</span>
+                                    <span id="study-counter-number">Counter</span>
                                     <span id="study-direction">Direction</span>
                                     <span id="study-dates">Dates</span>
                                     <span id="study-speed-limit">Speed Limit</span>
@@ -509,6 +498,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- App Modules -->
-    <script type="module" src="js/app.js?v=14"></script>
+    <script type="module" src="js/app.js?v=15"></script>
 </body>
 </html>

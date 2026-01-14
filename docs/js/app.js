@@ -61,7 +61,6 @@ const elements = {
     filterType: document.getElementById('filter-type'),
     filterDate: document.getElementById('filter-date'),
     studyList: document.getElementById('study-list'),
-    studyCount: document.getElementById('study-count'),
 
     // Tabs
     tabs: document.querySelectorAll('.tab'),
@@ -80,6 +79,7 @@ const elements = {
     // Study info
     studyTitle: document.getElementById('study-title'),
     studyTypeBadge: document.getElementById('study-type-badge'),
+    studyCounterNumber: document.getElementById('study-counter-number'),
     studyDirection: document.getElementById('study-direction'),
     studyDates: document.getElementById('study-dates'),
     studySpeedLimit: document.getElementById('study-speed-limit'),
@@ -94,8 +94,6 @@ const elements = {
 
     // Map
     mapContainer: document.getElementById('map-container'),
-    mapStudyCount: document.getElementById('map-study-count'),
-    satelliteToggleBtn: document.getElementById('satellite-toggle-btn'),
 
     // Reports - Advanced Builder
     reportTitle: document.getElementById('report-title'),
@@ -312,11 +310,6 @@ function setupEventListeners() {
 
     // Button group toggle handlers (type, priority, status)
     setupButtonGroupToggles();
-
-    // Satellite toggle
-    if (elements.satelliteToggleBtn) {
-        elements.satelliteToggleBtn.addEventListener('click', toggleSatelliteView);
-    }
 }
 
 // ============ Folder Handling ============
@@ -487,8 +480,6 @@ function updateStudyList() {
             return true;
         });
     }
-
-    elements.studyCount.textContent = studies.length;
 
     if (studies.length === 0) {
         elements.studyList.innerHTML = '<div class="loading">No studies found</div>';
@@ -698,6 +689,7 @@ function updateStudyInfo() {
     elements.studyTypeBadge.textContent = currentStudy.study_type;
     elements.studyTypeBadge.className = `type-badge ${typeClass}`;
 
+    elements.studyCounterNumber.textContent = currentStudy.counter_number ? `Counter #${currentStudy.counter_number}` : '';
     elements.studyDirection.textContent = currentStudy.direction || 'N/A';
     elements.studyDates.textContent = formatDateRange(currentStudy.start_datetime, currentStudy.end_datetime);
     elements.studySpeedLimit.textContent = currentStudy.speed_limit ? `${currentStudy.speed_limit} mph` : 'N/A';
@@ -784,6 +776,8 @@ function switchTab(tabId) {
 
 // ============ Map with Linked Study Grouping ============
 
+let satelliteControl = null;
+
 function initMap() {
     if (map) return;
 
@@ -802,19 +796,44 @@ function initMap() {
     // Add default layer
     streetLayer.addTo(map);
 
-    markersLayer = L.layerGroup().addTo(map);
+    // Add satellite toggle control to map (top-left, below zoom)
+    const SatelliteControl = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd: function() {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control satellite-control');
+            const button = L.DomUtil.create('a', 'satellite-toggle-btn', container);
+            button.href = '#';
+            button.title = 'Toggle satellite view';
+            button.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+            `;
 
-    // Collapse expanded markers when clicking on map
-    map.on('click', (e) => {
-        // Check if clicked on a marker or popup - if not, collapse expanded markers
-        if (!e.originalEvent.target.closest('.leaflet-marker-icon') && !e.originalEvent.target.closest('.leaflet-popup')) {
-            collapseExpandedMarkers();
+            L.DomEvent.on(button, 'click', function(e) {
+                L.DomEvent.preventDefault(e);
+                L.DomEvent.stopPropagation(e);
+                toggleSatelliteView();
+            });
+
+            return container;
         }
     });
 
-    // Collapse when popup closes
-    map.on('popupclose', () => {
-        collapseExpandedMarkers();
+    satelliteControl = new SatelliteControl();
+    satelliteControl.addTo(map);
+
+    markersLayer = L.layerGroup().addTo(map);
+
+    // Collapse expanded markers when clicking on map background
+    map.on('click', (e) => {
+        // Check if clicked on a marker or popup - if not, collapse expanded markers and close popups
+        if (!e.originalEvent.target.closest('.leaflet-marker-icon') && !e.originalEvent.target.closest('.leaflet-popup')) {
+            collapseExpandedMarkers();
+            map.closePopup();
+        }
     });
 
     updateMapMarkers();
@@ -825,30 +844,33 @@ function initMap() {
 function toggleSatelliteView() {
     isSatelliteView = !isSatelliteView;
 
+    const button = document.querySelector('.satellite-control .satellite-toggle-btn');
+    if (!button) return;
+
     if (isSatelliteView) {
         map.removeLayer(streetLayer);
         map.addLayer(satelliteLayer);
-        elements.satelliteToggleBtn.classList.add('active');
-        elements.satelliteToggleBtn.innerHTML = `
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        button.classList.add('active');
+        button.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                 <line x1="3" y1="9" x2="21" y2="9"></line>
                 <line x1="9" y1="21" x2="9" y2="9"></line>
             </svg>
-            Street
         `;
+        button.title = 'Switch to street view';
     } else {
         map.removeLayer(satelliteLayer);
         map.addLayer(streetLayer);
-        elements.satelliteToggleBtn.classList.remove('active');
-        elements.satelliteToggleBtn.innerHTML = `
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        button.classList.remove('active');
+        button.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="2" y1="12" x2="22" y2="12"></line>
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
             </svg>
-            Satellite
         `;
+        button.title = 'Switch to satellite view';
     }
 }
 
@@ -923,8 +945,6 @@ function updateMapMarkers() {
         markerCount++;
     });
 
-    elements.mapStudyCount.textContent = `${studies.length} studies (${markerCount} markers)`;
-
     if (studies.length > 0) {
         const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
         map.fitBounds(bounds, { padding: [50, 50] });
@@ -933,6 +953,58 @@ function updateMapMarkers() {
 
 function getMarkerColor(studyType) {
     return MARKER_COLORS[studyType] || '#666666';
+}
+
+// Helper to create simple popup content
+function createSimplePopup(study) {
+    return `
+        <div class="popup-simple">
+            <div class="popup-location">${escapeHtml(study.location)}</div>
+            ${study.counter_number ? `<div class="popup-counter">Counter #${study.counter_number}</div>` : ''}
+            <div class="popup-direction">${study.direction || 'N/A'}</div>
+        </div>
+    `;
+}
+
+// Select a study from the map (without switching to charts tab)
+async function selectStudyFromMap(studyId) {
+    showLoading('Loading study data...');
+
+    try {
+        currentStudy = studyIndex.getById(studyId);
+        if (!currentStudy) throw new Error('Study not found');
+
+        currentStudyData = await studyIndex.loadStudyData(studyId);
+        filteredStudyData = currentStudyData;
+
+        // For Radar studies, extract 85th percentile from raw file
+        extractedPercentiles = null;
+        if (currentStudy.study_type === 'Radar') {
+            extractedPercentiles = await studyIndex.extractRadarPercentiles(studyId);
+        }
+
+        // Set date range inputs based on study data
+        setDateRangeFromData();
+
+        updateStudyInfo();
+        updateChartTypeOptions();
+        updateChart();
+        updateStats();
+
+        elements.chartPlaceholder.style.display = 'none';
+        elements.chartContainer.style.display = 'flex';
+        elements.generateReportBtn.disabled = false;
+
+        // Update sidebar to show selected state
+        updateStudyList();
+        updateReportPanel();
+
+        hideLoading();
+
+    } catch (error) {
+        console.error('Error loading study:', error);
+        hideLoading();
+    }
 }
 
 function addLinkedMarker(studies) {
@@ -946,18 +1018,6 @@ function addLinkedMarker(studies) {
     const markerColor = allSameType ? getMarkerColor(firstType) : '#9333ea';
     const linkGroup = studies[0].link_group;
 
-    let popupHtml = `<div class="popup-title">🔗 ${escapeHtml(studies[0].location)}</div><hr style="margin:8px 0">`;
-
-    studies.forEach(s => {
-        popupHtml += `
-            <div style="margin:8px 0;padding:8px;background:var(--bg-secondary, #f5f5f5);border-radius:4px;">
-                <strong>${s.direction || 'Unknown'}</strong> (ID: ${s.study_id})<br>
-                <small>${s.study_type} | ${formatDateRange(s.start_datetime, s.end_datetime)}</small><br>
-                <button class="popup-btn" style="margin-top:5px" onclick="window.viewStudy('${s.study_id}')">View</button>
-            </div>
-        `;
-    });
-
     const icon = L.divIcon({
         className: 'linked-marker',
         html: `<div style="background:${markerColor};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);font-size:14px;">🔗</div>`,
@@ -965,7 +1025,7 @@ function addLinkedMarker(studies) {
         iconAnchor: [14, 14]
     });
 
-    const marker = L.marker([centLat, centLon], { icon }).bindPopup(popupHtml, { maxWidth: 300, maxHeight: 400 });
+    const marker = L.marker([centLat, centLon], { icon });
 
     // On marker click, expand linked studies to their actual coordinates
     marker.on('click', (e) => {
@@ -978,8 +1038,14 @@ function addLinkedMarker(studies) {
         // Hide the combined marker
         marker.setOpacity(0);
 
-        // Create individual markers at actual coordinates
-        studies.forEach(s => {
+        // Calculate bounds for all studies in group
+        const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
+
+        // Zoom to fit all expanded markers with padding
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+
+        // Create individual markers at actual coordinates and open all popups
+        studies.forEach((s, index) => {
             const color = getMarkerColor(s.study_type);
             const expandedIcon = L.divIcon({
                 className: 'expanded-marker',
@@ -988,23 +1054,24 @@ function addLinkedMarker(studies) {
                 iconAnchor: [12, 12]
             });
 
-            const expandedPopup = `
-                <div class="popup-title">${escapeHtml(s.location)}</div>
-                <div class="popup-info">
-                    <div><strong>Direction:</strong> ${s.direction || 'N/A'}</div>
-                    <div><strong>Type:</strong> ${s.study_type}</div>
-                    <div><strong>Dates:</strong> ${formatDateRange(s.start_datetime, s.end_datetime)}</div>
-                    ${s.speed_limit ? `<div><strong>Speed Limit:</strong> ${s.speed_limit} mph</div>` : ''}
-                </div>
-                <button class="popup-btn" onclick="window.viewStudy('${s.study_id}')">View Study</button>
-            `;
-
             const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
-                .bindPopup(expandedPopup)
+                .bindPopup(createSimplePopup(s), { autoClose: false, closeOnClick: false })
                 .addTo(map);
 
+            // Click on expanded marker selects that study (keeps group expanded)
+            expandedMarker.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                selectStudyFromMap(s.study_id);
+            });
+
             expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
+
+            // Open popup on all expanded markers
+            expandedMarker.openPopup();
         });
+
+        // Auto-select the first study in the group
+        selectStudyFromMap(studies[0].study_id);
     });
 
     markersLayer.addLayer(marker);
@@ -1038,17 +1105,6 @@ function collapseExpandedMarkers() {
 function addSingleMarker(study) {
     const color = getMarkerColor(study.study_type);
 
-    const popupHtml = `
-        <div class="popup-title">${escapeHtml(study.location)}</div>
-        <div class="popup-info">
-            <div><strong>Type:</strong> ${study.study_type}</div>
-            <div><strong>Direction:</strong> ${study.direction || 'N/A'}</div>
-            <div><strong>Dates:</strong> ${formatDateRange(study.start_datetime, study.end_datetime)}</div>
-            ${study.speed_limit ? `<div><strong>Speed Limit:</strong> ${study.speed_limit} mph</div>` : ''}
-        </div>
-        <button class="popup-btn" onclick="window.viewStudy('${study.study_id}')">View Study</button>
-    `;
-
     const icon = L.divIcon({
         className: 'single-marker',
         html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
@@ -1056,11 +1112,13 @@ function addSingleMarker(study) {
         iconAnchor: [12, 12]
     });
 
-    const marker = L.marker([study.lat, study.lon], { icon }).bindPopup(popupHtml);
+    const marker = L.marker([study.lat, study.lon], { icon })
+        .bindPopup(createSimplePopup(study));
 
-    // Collapse any expanded markers when clicking a single marker
+    // Click on single marker selects the study and shows popup
     marker.on('click', () => {
         collapseExpandedMarkers();
+        selectStudyFromMap(study.study_id);
     });
 
     markersLayer.addLayer(marker);
@@ -1075,14 +1133,57 @@ function zoomToStudy(studyId) {
     const study = studyIndex.getById(studyId);
     if (!study || !study.lat || !study.lon) return;
 
-    // Zoom to the study location
-    map.setView([study.lat, study.lon], 15, { animate: true });
-
-    // Open the popup for this study's marker
     const markerData = studyMarkers.get(studyId);
-    if (markerData) {
-        // Check if it's a linked marker (object with marker property) or single marker
-        const marker = markerData.marker || markerData;
+    if (!markerData) return;
+
+    // Check if this is a linked study
+    if (markerData.linkGroup && markerData.studies && markerData.studies.length > 1) {
+        // Collapse any previously expanded group
+        collapseExpandedMarkers();
+
+        // Store the link group for this expansion
+        expandedLinkGroup = markerData.linkGroup;
+
+        // Hide the combined marker
+        markerData.marker.setOpacity(0);
+
+        // Calculate bounds for all studies in group
+        const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
+
+        // Zoom to fit all expanded markers with padding
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+
+        // Create individual markers at actual coordinates and open all popups
+        markerData.studies.forEach((s) => {
+            const color = getMarkerColor(s.study_type);
+            const expandedIcon = L.divIcon({
+                className: 'expanded-marker',
+                html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                .bindPopup(createSimplePopup(s), { autoClose: false, closeOnClick: false })
+                .addTo(map);
+
+            // Click on expanded marker selects that study (keeps group expanded)
+            expandedMarker.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                selectStudyFromMap(s.study_id);
+            });
+
+            expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
+
+            // Open popup on all expanded markers
+            expandedMarker.openPopup();
+        });
+    } else {
+        // Single study - just zoom and open popup
+        collapseExpandedMarkers();
+        map.setView([study.lat, study.lon], 15, { animate: true });
+
+        const marker = markerData.marker;
         if (marker && marker.openPopup) {
             marker.openPopup();
         }
