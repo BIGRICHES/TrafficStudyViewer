@@ -958,9 +958,52 @@ function updateMapMarkers() {
         markerCount++;
     });
 
-    if (studies.length > 0) {
+    // Only fit bounds on initial load (when no study is selected), never after
+    if (studies.length > 0 && !currentStudy) {
         const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
         map.fitBounds(bounds, { padding: [50, 50] });
+    }
+
+    // If a linked study is selected, make sure link node is hidden and markers are expanded
+    if (currentStudy) {
+        const markerData = studyMarkers.get(currentStudy.study_id);
+        if (markerData && markerData.linkGroup && markerData.studies && markerData.studies.length > 1) {
+            // Hide the combined marker
+            markerData.marker.setOpacity(0);
+
+            // If not already expanded, expand the markers
+            if (expandedLinkGroup !== markerData.linkGroup) {
+                expandedLinkGroup = markerData.linkGroup;
+
+                // Create individual markers at actual coordinates
+                markerData.studies.forEach((s) => {
+                    const color = getMarkerColor(s.study_type);
+                    const isSelected = s.study_id === currentStudy.study_id;
+                    const expandedIcon = L.divIcon({
+                        className: 'expanded-marker',
+                        html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isSelected ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isSelected ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    });
+
+                    const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                        .addTo(map);
+
+                    expandedMarker.on('click', (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        selectStudyFromMap(s.study_id);
+                    });
+
+                    expandedMarker.on('dblclick', (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        selectStudyFromMap(s.study_id);
+                        switchTab('charts');
+                    });
+
+                    expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
+                });
+            }
+        }
     }
 }
 
@@ -1099,16 +1142,8 @@ function addLinkedMarker(studies) {
         // Hide the combined marker
         marker.setOpacity(0);
 
-        // Calculate bounds for all studies in group
-        const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
-
-        // Only zoom in if needed - never zoom out
-        const currentZoom = map.getZoom();
-        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17, animate: true });
-        // If fitBounds zoomed out, restore previous zoom
-        if (map.getZoom() < currentZoom) {
-            map.setZoom(currentZoom);
-        }
+        // Just pan to center - never change zoom
+        map.panTo([centLat, centLon], { animate: true });
 
         // Create individual markers at actual coordinates (no popups)
         studies.forEach((s, index) => {
@@ -1262,20 +1297,14 @@ function zoomToStudy(studyId) {
             // Hide the combined marker
             markerData.marker.setOpacity(0);
 
-            // Calculate bounds for all studies in group
-            const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
+            // Calculate center of all studies - just pan, never change zoom
+            let totalLat = 0, totalLon = 0;
+            markerData.studies.forEach(s => { totalLat += s.lat; totalLon += s.lon; });
+            const centerLat = totalLat / markerData.studies.length;
+            const centerLon = totalLon / markerData.studies.length;
 
-            // Only zoom if needed - never zoom out, only in
-            const currentZoom = map.getZoom();
-            map.fitBounds(bounds, {
-                padding: [80, 80],
-                maxZoom: 17,
-                animate: true
-            });
-            // If fitBounds zoomed out, restore previous zoom
-            if (map.getZoom() < currentZoom) {
-                map.setZoom(currentZoom);
-            }
+            // Pan to center without changing zoom
+            map.panTo([centerLat, centerLon], { animate: true });
 
             // Create individual markers at actual coordinates (no popups)
             markerData.studies.forEach((s) => {
@@ -1311,12 +1340,9 @@ function zoomToStudy(studyId) {
             updateExpandedMarkerSelection(studyId);
         }
     } else {
-        // Single study - pan to location without changing zoom (never zoom out)
+        // Single study - just pan to location, never change zoom
         collapseExpandedMarkers();
-        const currentZoom = map.getZoom();
-        // Only zoom in if currently at a lower zoom level than 15
-        const targetZoom = Math.max(currentZoom, 15);
-        map.setView([study.lat, study.lon], targetZoom, { animate: true });
+        map.panTo([study.lat, study.lon], { animate: true });
 
         // Update single marker selection visual
         updateSingleMarkerSelection(studyId);
