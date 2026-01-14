@@ -522,6 +522,12 @@ function updateStudyList() {
             e.stopPropagation();
             selectStudy(item.dataset.id);
         });
+        // Double-click goes to charts tab
+        item.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            selectStudy(item.dataset.id);
+            switchTab('charts');
+        });
     });
 
     elements.studyList.querySelectorAll('.linked-group-header').forEach(header => {
@@ -829,10 +835,15 @@ function initMap() {
 
     // Collapse expanded markers when clicking on map background
     map.on('click', (e) => {
-        // Check if clicked on a marker or popup - if not, collapse expanded markers and close popups
-        if (!e.originalEvent.target.closest('.leaflet-marker-icon') && !e.originalEvent.target.closest('.leaflet-popup')) {
-            collapseExpandedMarkers();
-            map.closePopup();
+        // Check if clicked on a marker - if not, check if we should collapse
+        if (!e.originalEvent.target.closest('.leaflet-marker-icon')) {
+            // Only collapse if selected study is NOT in the currently expanded group
+            const selectedInExpandedGroup = currentStudy && expandedLinkGroup &&
+                studyMarkers.get(currentStudy.study_id)?.linkGroup === expandedLinkGroup;
+
+            if (!selectedInExpandedGroup) {
+                collapseExpandedMarkers();
+            }
         }
     });
 
@@ -955,19 +966,15 @@ function getMarkerColor(studyType) {
     return MARKER_COLORS[studyType] || '#666666';
 }
 
-// Helper to create simple popup content
-function createSimplePopup(study) {
-    return `
-        <div class="popup-simple">
-            <div class="popup-location">${escapeHtml(study.location)}</div>
-            ${study.counter_number ? `<div class="popup-counter">Counter #${study.counter_number}</div>` : ''}
-            <div class="popup-direction">${study.direction || 'N/A'}</div>
-        </div>
-    `;
-}
-
 // Select a study from the map (without switching to charts tab)
-async function selectStudyFromMap(studyId) {
+async function selectStudyFromMap(studyId, skipZoom = false) {
+    // If same study is already selected, don't reload
+    if (currentStudy && currentStudy.study_id === studyId) {
+        // Just update marker visuals
+        updateExpandedMarkerSelection(studyId);
+        return;
+    }
+
     showLoading('Loading study data...');
 
     try {
@@ -999,12 +1006,64 @@ async function selectStudyFromMap(studyId) {
         updateStudyList();
         updateReportPanel();
 
+        // Scroll sidebar to show selected study
+        scrollSidebarToStudy(studyId);
+
+        // Update expanded marker selection visuals
+        updateExpandedMarkerSelection(studyId);
+
         hideLoading();
 
     } catch (error) {
         console.error('Error loading study:', error);
         hideLoading();
     }
+}
+
+// Scroll sidebar to show the selected study
+function scrollSidebarToStudy(studyId) {
+    const studyItem = elements.studyList.querySelector(`.study-item[data-id="${studyId}"]`);
+    if (studyItem) {
+        // Expand the linked group if needed
+        const linkedGroup = studyItem.closest('.linked-group');
+        if (linkedGroup) {
+            const header = linkedGroup.querySelector('.linked-group-header');
+            if (header) {
+                const groupId = header.dataset.group;
+                if (!expandedGroups.has(groupId)) {
+                    expandedGroups.add(groupId);
+                    updateStudyList();
+                    // Re-find the element after updating
+                    const newStudyItem = elements.studyList.querySelector(`.study-item[data-id="${studyId}"]`);
+                    if (newStudyItem) {
+                        newStudyItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return;
+                }
+            }
+        }
+        studyItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+// Update the visual selection state of expanded markers
+function updateExpandedMarkerSelection(selectedStudyId) {
+    expandedMarkers.forEach(({ marker, studyId }) => {
+        const isSelected = studyId === selectedStudyId;
+        const markerEl = marker.getElement();
+        if (markerEl) {
+            const innerDiv = markerEl.querySelector('div');
+            if (innerDiv) {
+                if (isSelected) {
+                    innerDiv.style.boxShadow = '0 0 0 3px #fff, 0 0 0 6px #5470C6';
+                    innerDiv.style.transform = 'scale(1.2)';
+                } else {
+                    innerDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+                    innerDiv.style.transform = 'scale(1)';
+                }
+            }
+        }
+    });
 }
 
 function addLinkedMarker(studies) {
@@ -1044,18 +1103,18 @@ function addLinkedMarker(studies) {
         // Zoom to fit all expanded markers with padding
         map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
 
-        // Create individual markers at actual coordinates and open all popups
+        // Create individual markers at actual coordinates (no popups)
         studies.forEach((s, index) => {
             const color = getMarkerColor(s.study_type);
+            const isFirstStudy = index === 0;
             const expandedIcon = L.divIcon({
                 className: 'expanded-marker',
-                html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
+                html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isFirstStudy ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isFirstStudy ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
                 iconSize: [24, 24],
                 iconAnchor: [12, 12]
             });
 
             const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
-                .bindPopup(createSimplePopup(s), { autoClose: false, closeOnClick: false })
                 .addTo(map);
 
             // Click on expanded marker selects that study (keeps group expanded)
@@ -1064,10 +1123,14 @@ function addLinkedMarker(studies) {
                 selectStudyFromMap(s.study_id);
             });
 
-            expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
+            // Double-click goes to charts tab
+            expandedMarker.on('dblclick', (e) => {
+                L.DomEvent.stopPropagation(e);
+                selectStudyFromMap(s.study_id);
+                switchTab('charts');
+            });
 
-            // Open popup on all expanded markers
-            expandedMarker.openPopup();
+            expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
         });
 
         // Auto-select the first study in the group
@@ -1083,14 +1146,18 @@ function addLinkedMarker(studies) {
 function collapseExpandedMarkers() {
     if (expandedMarkers.length === 0) return;
 
+    // Check if the currently selected study is in the expanded link group
+    const selectedStudyInExpandedGroup = currentStudy && expandedLinkGroup &&
+        studyMarkers.get(currentStudy.study_id)?.linkGroup === expandedLinkGroup;
+
     // Remove expanded markers from map
     expandedMarkers.forEach(({ marker }) => {
         map.removeLayer(marker);
     });
     expandedMarkers = [];
 
-    // Restore the combined marker opacity
-    if (expandedLinkGroup) {
+    // Only restore the combined marker if no study from this group is selected
+    if (expandedLinkGroup && !selectedStudyInExpandedGroup) {
         // Find the combined marker and restore it
         studyMarkers.forEach((value) => {
             if (value.linkGroup === expandedLinkGroup && value.marker) {
@@ -1102,29 +1169,66 @@ function collapseExpandedMarkers() {
     expandedLinkGroup = null;
 }
 
+// Check if link marker should be shown (only if no study in that group is selected)
+function shouldShowLinkMarker(linkGroup) {
+    if (!currentStudy) return true;
+    const selectedLinkGroup = studyMarkers.get(currentStudy.study_id)?.linkGroup;
+    return selectedLinkGroup !== linkGroup;
+}
+
 function addSingleMarker(study) {
     const color = getMarkerColor(study.study_type);
+    const isSelected = currentStudy && currentStudy.study_id === study.study_id;
 
     const icon = L.divIcon({
         className: 'single-marker',
-        html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
+        html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isSelected ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isSelected ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12]
     });
 
-    const marker = L.marker([study.lat, study.lon], { icon })
-        .bindPopup(createSimplePopup(study));
+    const marker = L.marker([study.lat, study.lon], { icon });
 
-    // Click on single marker selects the study and shows popup
+    // Click on single marker selects the study
     marker.on('click', () => {
         collapseExpandedMarkers();
         selectStudyFromMap(study.study_id);
+        // Update this marker's visual to show selected
+        updateSingleMarkerSelection(study.study_id);
+    });
+
+    // Double-click goes to charts tab
+    marker.on('dblclick', () => {
+        selectStudyFromMap(study.study_id);
+        switchTab('charts');
     });
 
     markersLayer.addLayer(marker);
 
     // Store as object for consistency with linked markers
-    studyMarkers.set(study.study_id, { marker, linkGroup: null, studies: null });
+    studyMarkers.set(study.study_id, { marker, linkGroup: null, studies: null, studyType: study.study_type });
+}
+
+// Update single marker selection visual
+function updateSingleMarkerSelection(selectedStudyId) {
+    studyMarkers.forEach((value, studyId) => {
+        if (!value.linkGroup && value.marker) {
+            const isSelected = studyId === selectedStudyId;
+            const markerEl = value.marker.getElement();
+            if (markerEl) {
+                const innerDiv = markerEl.querySelector('div');
+                if (innerDiv) {
+                    if (isSelected) {
+                        innerDiv.style.boxShadow = '0 0 0 3px #fff, 0 0 0 6px #5470C6';
+                        innerDiv.style.transform = 'scale(1.2)';
+                    } else {
+                        innerDiv.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+                        innerDiv.style.transform = 'scale(1)';
+                    }
+                }
+            }
+        }
+    });
 }
 
 function zoomToStudy(studyId) {
@@ -1138,55 +1242,65 @@ function zoomToStudy(studyId) {
 
     // Check if this is a linked study
     if (markerData.linkGroup && markerData.studies && markerData.studies.length > 1) {
-        // Collapse any previously expanded group
-        collapseExpandedMarkers();
+        // Check if this link group is already expanded
+        const alreadyExpanded = expandedLinkGroup === markerData.linkGroup;
 
-        // Store the link group for this expansion
-        expandedLinkGroup = markerData.linkGroup;
+        if (!alreadyExpanded) {
+            // Collapse any previously expanded group
+            collapseExpandedMarkers();
 
-        // Hide the combined marker
-        markerData.marker.setOpacity(0);
+            // Store the link group for this expansion
+            expandedLinkGroup = markerData.linkGroup;
 
-        // Calculate bounds for all studies in group
-        const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
+            // Hide the combined marker
+            markerData.marker.setOpacity(0);
 
-        // Zoom to fit all expanded markers with padding
-        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+            // Calculate bounds for all studies in group
+            const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
 
-        // Create individual markers at actual coordinates and open all popups
-        markerData.studies.forEach((s) => {
-            const color = getMarkerColor(s.study_type);
-            const expandedIcon = L.divIcon({
-                className: 'expanded-marker',
-                html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
+            // Zoom to fit all expanded markers with padding
+            map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+
+            // Create individual markers at actual coordinates (no popups)
+            markerData.studies.forEach((s) => {
+                const color = getMarkerColor(s.study_type);
+                const isSelected = s.study_id === studyId;
+                const expandedIcon = L.divIcon({
+                    className: 'expanded-marker',
+                    html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isSelected ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isSelected ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+
+                const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                    .addTo(map);
+
+                // Click on expanded marker selects that study (keeps group expanded)
+                expandedMarker.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    selectStudyFromMap(s.study_id);
+                });
+
+                // Double-click goes to charts tab
+                expandedMarker.on('dblclick', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    selectStudyFromMap(s.study_id);
+                    switchTab('charts');
+                });
+
+                expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
             });
-
-            const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
-                .bindPopup(createSimplePopup(s), { autoClose: false, closeOnClick: false })
-                .addTo(map);
-
-            // Click on expanded marker selects that study (keeps group expanded)
-            expandedMarker.on('click', (e) => {
-                L.DomEvent.stopPropagation(e);
-                selectStudyFromMap(s.study_id);
-            });
-
-            expandedMarkers.push({ marker: expandedMarker, studyId: s.study_id });
-
-            // Open popup on all expanded markers
-            expandedMarker.openPopup();
-        });
+        } else {
+            // Already expanded - just update selection visual
+            updateExpandedMarkerSelection(studyId);
+        }
     } else {
-        // Single study - just zoom and open popup
+        // Single study - zoom and update selection visual
         collapseExpandedMarkers();
         map.setView([study.lat, study.lon], 15, { animate: true });
 
-        const marker = markerData.marker;
-        if (marker && marker.openPopup) {
-            marker.openPopup();
-        }
+        // Update single marker selection visual
+        updateSingleMarkerSelection(studyId);
     }
 }
 
