@@ -603,8 +603,6 @@ function toggleGroup(linkGroup) {
 // ============ Study Selection ============
 
 async function selectStudy(studyId) {
-    showLoading('Loading study data...');
-
     try {
         currentStudy = studyIndex.getById(studyId);
         if (!currentStudy) throw new Error('Study not found');
@@ -636,12 +634,9 @@ async function selectStudy(studyId) {
         // Zoom to study on map
         zoomToStudy(studyId);
 
-        hideLoading();
-
     } catch (error) {
         console.error('Error loading study:', error);
         alert(`Error loading study: ${error.message}`);
-        hideLoading();
     }
 }
 
@@ -1020,8 +1015,6 @@ async function selectStudyFromMap(studyId, skipZoom = false) {
         return;
     }
 
-    showLoading('Loading study data...');
-
     try {
         currentStudy = studyIndex.getById(studyId);
         if (!currentStudy) throw new Error('Study not found');
@@ -1057,11 +1050,8 @@ async function selectStudyFromMap(studyId, skipZoom = false) {
         // Update expanded marker selection visuals
         updateExpandedMarkerSelection(studyId);
 
-        hideLoading();
-
     } catch (error) {
         console.error('Error loading study:', error);
-        hideLoading();
     }
 }
 
@@ -1297,14 +1287,19 @@ function zoomToStudy(studyId) {
             // Hide the combined marker
             markerData.marker.setOpacity(0);
 
-            // Calculate center of all studies - just pan, never change zoom
-            let totalLat = 0, totalLon = 0;
-            markerData.studies.forEach(s => { totalLat += s.lat; totalLon += s.lon; });
-            const centerLat = totalLat / markerData.studies.length;
-            const centerLon = totalLon / markerData.studies.length;
+            // Calculate bounds for all studies in group
+            const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
+            const currentZoom = map.getZoom();
 
-            // Pan to center without changing zoom
-            map.panTo([centerLat, centerLon], { animate: true });
+            // Fit bounds but only zoom IN, never out
+            map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17, animate: true });
+
+            // After fitBounds, check if it zoomed out and restore if so
+            setTimeout(() => {
+                if (map.getZoom() < currentZoom) {
+                    map.setZoom(currentZoom, { animate: false });
+                }
+            }, 50);
 
             // Create individual markers at actual coordinates (no popups)
             markerData.studies.forEach((s) => {
