@@ -124,6 +124,28 @@ const elements = {
     chartModalEndDate: document.getElementById('chart-modal-end-date'),
     chartModalEndTime: document.getElementById('chart-modal-end-time'),
     chartModalShowLabels: document.getElementById('chart-modal-show-labels'),
+    chartModalEachDay: document.getElementById('chart-modal-each-day'),
+
+    // Presets
+    presetSelect: document.getElementById('preset-select'),
+    applyPresetBtn: document.getElementById('apply-preset-btn'),
+    savePresetBtn: document.getElementById('save-preset-btn'),
+    managePresetsBtn: document.getElementById('manage-presets-btn'),
+    clearReportBtn: document.getElementById('clear-report-btn'),
+
+    // Preset Modal
+    presetModal: document.getElementById('preset-modal'),
+    closePresetModal: document.getElementById('close-preset-modal'),
+    closePresetModalBtn: document.getElementById('close-preset-modal-btn'),
+    presetList: document.getElementById('preset-list'),
+
+    // Save Preset Modal
+    savePresetModal: document.getElementById('save-preset-modal'),
+    savePresetModalTitle: document.getElementById('save-preset-modal-title'),
+    closeSavePresetModal: document.getElementById('close-save-preset-modal'),
+    cancelSavePreset: document.getElementById('cancel-save-preset'),
+    confirmSavePreset: document.getElementById('confirm-save-preset'),
+    presetNameInput: document.getElementById('preset-name-input'),
 
     // Data Table Modal
     addTableBtn: document.getElementById('add-table-btn'),
@@ -166,6 +188,10 @@ let editingItemIndex = -1;
 let modalSelectedStudyId = null;
 let modalSelectedStudyMeta = null;
 
+// Presets state
+let presets = [];
+let editingPresetId = null;
+
 // Table modal state
 let tableModalSelectedStudyId = null;
 let tableModalSelectedStudyMeta = null;
@@ -176,6 +202,7 @@ let pendingStudies = [];
 let editingPendingId = null;
 let pendingFilter = 'all';
 const PENDING_FILE = 'pending_studies.json';
+const PRESETS_FILE = 'report_presets.json';
 
 // ============ Initialization ============
 
@@ -281,6 +308,47 @@ function setupEventListeners() {
     }
     if (elements.tableModalType) {
         elements.tableModalType.addEventListener('change', onTableTypeChange);
+    }
+
+    // Report Presets
+    if (elements.presetSelect) {
+        elements.presetSelect.addEventListener('change', onPresetSelectChange);
+    }
+    if (elements.applyPresetBtn) {
+        elements.applyPresetBtn.addEventListener('click', applyPreset);
+    }
+    if (elements.savePresetBtn) {
+        elements.savePresetBtn.addEventListener('click', openSavePresetModal);
+    }
+    if (elements.managePresetsBtn) {
+        elements.managePresetsBtn.addEventListener('click', openPresetModal);
+    }
+    if (elements.clearReportBtn) {
+        elements.clearReportBtn.addEventListener('click', clearReportItems);
+    }
+
+    // Preset Modal
+    if (elements.closePresetModal) {
+        elements.closePresetModal.addEventListener('click', closePresetModal);
+    }
+    if (elements.closePresetModalBtn) {
+        elements.closePresetModalBtn.addEventListener('click', closePresetModal);
+    }
+
+    // Save Preset Modal
+    if (elements.closeSavePresetModal) {
+        elements.closeSavePresetModal.addEventListener('click', closeSavePresetModal);
+    }
+    if (elements.cancelSavePreset) {
+        elements.cancelSavePreset.addEventListener('click', closeSavePresetModal);
+    }
+    if (elements.confirmSavePreset) {
+        elements.confirmSavePreset.addEventListener('click', confirmSavePreset);
+    }
+    if (elements.presetNameInput) {
+        elements.presetNameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') confirmSavePreset();
+        });
     }
 
     // Pending Studies
@@ -440,6 +508,9 @@ async function loadAndShowApp() {
 
     // Load pending studies
     await loadPendingStudies();
+
+    // Load report presets
+    await loadPresets();
 
     hideLoading();
 }
@@ -1541,6 +1612,7 @@ window.openEditChartModal = function(index) {
     elements.chartModalEndDate.value = item.endDate || '';
     elements.chartModalEndTime.value = item.endTime || '23:59';
     elements.chartModalShowLabels.checked = item.showLabels;
+    elements.chartModalEachDay.checked = item.eachDay || false;
 
     elements.chartModal.style.display = 'flex';
 }
@@ -1564,6 +1636,7 @@ function resetChartModal() {
     elements.chartModalEndDate.value = '';
     elements.chartModalEndTime.value = '23:59';
     elements.chartModalShowLabels.checked = true;
+    elements.chartModalEachDay.checked = false;
 }
 
 function toggleDateRange() {
@@ -1644,7 +1717,8 @@ function saveChartItem() {
         startTime: elements.chartModalStartTime.value,
         endDate: elements.chartModalEndDate.value,
         endTime: elements.chartModalEndTime.value,
-        showLabels: elements.chartModalShowLabels.checked
+        showLabels: elements.chartModalShowLabels.checked,
+        eachDay: elements.chartModalEachDay.checked
     };
 
     if (editingItemIndex >= 0) {
@@ -1686,6 +1760,9 @@ function renderReportItems() {
         let metaStr = itemTypeName;
         if (!isTable) {
             metaStr += ` | ${item.timeAgg}`;
+            if (item.eachDay) {
+                metaStr += ' | per-day';
+            }
         }
 
         // Build filter description
@@ -2290,6 +2367,268 @@ function updateReportPanel() {
     if (reportItems.length === 0 && currentStudy) {
         // Don't auto-add, just let user know they can add
     }
+}
+
+// ============ Report Presets ============
+
+async function loadPresets() {
+    try {
+        const content = await fileSystem.readFileIfExists(PRESETS_FILE);
+        if (content) {
+            const data = JSON.parse(content);
+            presets = data.presets || [];
+        } else {
+            presets = [];
+        }
+    } catch (error) {
+        console.error('Error loading presets:', error);
+        presets = [];
+    }
+    renderPresetSelect();
+}
+
+async function savePresetsToFile() {
+    try {
+        const content = JSON.stringify({ presets }, null, 2);
+        await fileSystem.writeFile(PRESETS_FILE, content);
+    } catch (error) {
+        console.error('Error saving presets:', error);
+        alert('Failed to save presets: ' + error.message);
+    }
+}
+
+function renderPresetSelect() {
+    if (!elements.presetSelect) return;
+
+    elements.presetSelect.innerHTML = '<option value="">Select a preset...</option>' +
+        presets.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+
+    elements.applyPresetBtn.disabled = true;
+}
+
+function onPresetSelectChange() {
+    elements.applyPresetBtn.disabled = !elements.presetSelect.value;
+}
+
+function getStudyDays(study) {
+    const start = new Date(study.start_datetime);
+    const end = new Date(study.end_datetime);
+    const days = [];
+
+    // Normalize to start of day
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        days.push(new Date(d));
+    }
+    return days;
+}
+
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function applyPreset() {
+    const presetId = elements.presetSelect.value;
+    if (!presetId) {
+        alert('Please select a preset');
+        return;
+    }
+
+    if (!currentStudy) {
+        alert('Please select a study from the sidebar first');
+        return;
+    }
+
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) {
+        alert('Preset not found');
+        return;
+    }
+
+    const studyDays = getStudyDays(currentStudy);
+
+    for (const presetItem of preset.items) {
+        if (presetItem.eachDay && studyDays.length > 0) {
+            // Create one chart per day
+            for (const day of studyDays) {
+                const dateStr = formatDateForInput(day);
+                const item = {
+                    studyId: currentStudy.study_id,
+                    studyMeta: { ...currentStudy },
+                    chartType: presetItem.chartType,
+                    timeAgg: presetItem.timeAgg,
+                    fullRange: false,
+                    startDate: dateStr,
+                    startTime: '00:00',
+                    endDate: dateStr,
+                    endTime: '23:59',
+                    showLabels: presetItem.showLabels,
+                    eachDay: false // Already expanded
+                };
+                reportItems.push(item);
+            }
+        } else {
+            // Single chart for full study range
+            const item = {
+                studyId: currentStudy.study_id,
+                studyMeta: { ...currentStudy },
+                chartType: presetItem.chartType,
+                timeAgg: presetItem.timeAgg,
+                fullRange: true,
+                startDate: '',
+                startTime: '00:00',
+                endDate: '',
+                endTime: '23:59',
+                showLabels: presetItem.showLabels,
+                eachDay: false
+            };
+            reportItems.push(item);
+        }
+    }
+
+    renderReportItems();
+    updatePageCount();
+    elements.presetSelect.value = '';
+    elements.applyPresetBtn.disabled = true;
+}
+
+function openSavePresetModal() {
+    if (reportItems.length === 0) {
+        alert('No charts to save. Add some charts first.');
+        return;
+    }
+
+    editingPresetId = null;
+    elements.savePresetModalTitle.textContent = 'Save Preset';
+    elements.presetNameInput.value = '';
+    elements.savePresetModal.style.display = 'flex';
+    elements.presetNameInput.focus();
+}
+
+function closeSavePresetModal() {
+    elements.savePresetModal.style.display = 'none';
+    editingPresetId = null;
+}
+
+async function confirmSavePreset() {
+    const name = elements.presetNameInput.value.trim();
+    if (!name) {
+        alert('Please enter a preset name');
+        return;
+    }
+
+    if (editingPresetId) {
+        // Renaming existing preset
+        const preset = presets.find(p => p.id === editingPresetId);
+        if (preset) {
+            preset.name = name;
+        }
+    } else {
+        // Creating new preset from current reportItems
+        const presetItems = reportItems
+            .filter(item => item.type !== 'table') // Only charts, not tables
+            .map(item => ({
+                chartType: item.chartType,
+                timeAgg: item.timeAgg,
+                showLabels: item.showLabels,
+                eachDay: item.eachDay || false
+            }));
+
+        if (presetItems.length === 0) {
+            alert('No charts to save. Tables are not included in presets.');
+            return;
+        }
+
+        const newPreset = {
+            id: 'preset-' + Date.now(),
+            name: name,
+            items: presetItems
+        };
+
+        presets.push(newPreset);
+    }
+
+    await savePresetsToFile();
+    renderPresetSelect();
+    closeSavePresetModal();
+}
+
+function openPresetModal() {
+    renderPresetList();
+    elements.presetModal.style.display = 'flex';
+}
+
+function closePresetModal() {
+    elements.presetModal.style.display = 'none';
+}
+
+function renderPresetList() {
+    if (!elements.presetList) return;
+
+    if (presets.length === 0) {
+        elements.presetList.innerHTML = '<p class="empty-list-message">No presets saved yet.</p>';
+        return;
+    }
+
+    elements.presetList.innerHTML = presets.map(preset => {
+        const chartCount = preset.items.length;
+        const eachDayCount = preset.items.filter(i => i.eachDay).length;
+        let meta = `${chartCount} chart${chartCount !== 1 ? 's' : ''}`;
+        if (eachDayCount > 0) {
+            meta += ` (${eachDayCount} per-day)`;
+        }
+
+        return `
+            <div class="preset-item">
+                <div class="preset-item-info">
+                    <div class="preset-item-name">${escapeHtml(preset.name)}</div>
+                    <div class="preset-item-meta">${meta}</div>
+                </div>
+                <div class="preset-item-actions">
+                    <button onclick="renamePreset('${preset.id}')" title="Rename">✎</button>
+                    <button class="delete" onclick="deletePreset('${preset.id}')" title="Delete">✕</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.renamePreset = function(presetId) {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    editingPresetId = presetId;
+    elements.savePresetModalTitle.textContent = 'Rename Preset';
+    elements.presetNameInput.value = preset.name;
+    elements.savePresetModal.style.display = 'flex';
+    elements.presetNameInput.focus();
+};
+
+window.deletePreset = async function(presetId) {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+
+    if (!confirm(`Delete preset "${preset.name}"?`)) return;
+
+    presets = presets.filter(p => p.id !== presetId);
+    await savePresetsToFile();
+    renderPresetSelect();
+    renderPresetList();
+};
+
+function clearReportItems() {
+    if (reportItems.length === 0) return;
+
+    if (!confirm('Clear all items from the report?')) return;
+
+    reportItems = [];
+    renderReportItems();
+    updatePageCount();
 }
 
 // ============ Pending Studies ============

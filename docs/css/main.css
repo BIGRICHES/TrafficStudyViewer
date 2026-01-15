@@ -1685,3 +1685,114 @@ body {
     align-items: center;
     justify-content: center;
 }
+
+/* ========= Report Presets ========= */
+.presets-section {
+    margin-bottom: 1.25rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.presets-section > label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.presets-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.presets-controls select {
+    flex: 1;
+    min-width: 150px;
+    max-width: 250px;
+}
+
+.preset-help {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+    font-size: 0.8rem;
+}
+
+/* Preset Manager List */
+.preset-list {
+    min-height: 100px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.preset-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-primary);
+}
+
+.preset-item:last-child {
+    border-bottom: none;
+}
+
+.preset-item:hover {
+    background: var(--bg-hover);
+}
+
+.preset-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.preset-item-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.preset-item-meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.preset-item-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.preset-item-actions button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.preset-item-actions button:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
+.preset-item-actions button.delete:hover {
+    border-color: var(--error-text);
+    color: var(--error-text);
+}
+
+/* Small Modal */
+.modal-small {
+    max-width: 350px;
+    width: 90%;
+    text-align: left;
+}

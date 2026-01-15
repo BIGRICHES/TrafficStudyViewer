@@ -230,6 +230,20 @@
                                 <input type="text" id="report-title" placeholder="Traffic Study Report">
                             </div>
 
+                            <!-- Presets Section -->
+                            <div class="presets-section">
+                                <label>Presets</label>
+                                <div class="presets-controls">
+                                    <select id="preset-select" class="control-select">
+                                        <option value="">Select a preset...</option>
+                                    </select>
+                                    <button type="button" id="apply-preset-btn" class="btn btn-small btn-primary" disabled>Apply</button>
+                                    <button type="button" id="save-preset-btn" class="btn btn-small btn-secondary">Save Current</button>
+                                    <button type="button" id="manage-presets-btn" class="btn btn-small btn-secondary">Manage</button>
+                                </div>
+                                <p class="help-text preset-help">Select a study from the sidebar, then apply a preset to add charts for that study.</p>
+                            </div>
+
                             <!-- Report Items -->
                             <div class="report-items-section">
                                 <div class="section-header">
@@ -237,6 +251,7 @@
                                     <div class="section-header-buttons">
                                         <button type="button" id="add-chart-btn" class="btn btn-small btn-primary">+ Add Chart</button>
                                         <button type="button" id="add-table-btn" class="btn btn-small btn-secondary">+ Add Data Table</button>
+                                        <button type="button" id="clear-report-btn" class="btn btn-small btn-danger">Clear</button>
                                     </div>
                                 </div>
                                 <div id="report-items-list" class="report-items-list">
@@ -328,6 +343,15 @@
                                             Show value labels
                                         </label>
                                     </div>
+
+                                    <!-- Each Day Option (for presets) -->
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="chart-modal-each-day">
+                                            Apply to each day of study
+                                        </label>
+                                        <p class="help-text" style="margin-top: 0.25rem;">When saved as a preset, creates one chart per day of the study</p>
+                                    </div>
                                 </div>
                                 <div class="modal-footer">
                                     <button type="button" id="cancel-chart-modal" class="btn btn-secondary">Cancel</button>
@@ -382,6 +406,44 @@
                                 <div class="modal-footer">
                                     <button type="button" id="cancel-table-modal" class="btn btn-secondary">Cancel</button>
                                     <button type="button" id="save-table-modal" class="btn btn-primary">Add Table</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preset Manager Modal -->
+                        <div id="preset-modal" class="modal" style="display: none;">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h3>Manage Presets</h3>
+                                    <button type="button" id="close-preset-modal" class="btn-close">&times;</button>
+                                </div>
+                                <div class="modal-body">
+                                    <div id="preset-list" class="preset-list">
+                                        <p class="empty-list-message">No presets saved yet.</p>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" id="close-preset-modal-btn" class="btn btn-secondary">Close</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Save Preset Modal -->
+                        <div id="save-preset-modal" class="modal" style="display: none;">
+                            <div class="modal-content modal-small">
+                                <div class="modal-header">
+                                    <h3 id="save-preset-modal-title">Save Preset</h3>
+                                    <button type="button" id="close-save-preset-modal" class="btn-close">&times;</button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="form-group">
+                                        <label for="preset-name-input">Preset Name</label>
+                                        <input type="text" id="preset-name-input" class="control-input" placeholder="e.g., Daily Analysis">
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" id="cancel-save-preset" class="btn btn-secondary">Cancel</button>
+                                    <button type="button" id="confirm-save-preset" class="btn btn-primary">Save</button>
                                 </div>
                             </div>
                         </div>
