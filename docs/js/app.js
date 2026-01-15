@@ -2403,11 +2403,15 @@ function renderPresetSelect() {
     elements.presetSelect.innerHTML = '<option value="">Select a preset...</option>' +
         presets.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
 
-    elements.applyPresetBtn.disabled = true;
+    if (elements.applyPresetBtn) {
+        elements.applyPresetBtn.disabled = true;
+    }
 }
 
 function onPresetSelectChange() {
-    elements.applyPresetBtn.disabled = !elements.presetSelect.value;
+    if (elements.applyPresetBtn && elements.presetSelect) {
+        elements.applyPresetBtn.disabled = !elements.presetSelect.value;
+    }
 }
 
 function getStudyDays(study) {
