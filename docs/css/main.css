@@ -201,6 +201,23 @@ body {
     flex-shrink: 0;
 }
 
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-logo {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+.header-logo img {
+    height: 32px;
+    width: auto;
+}
+
 .app-title {
     font-size: 1.25rem;
     font-weight: 600;
@@ -586,6 +603,31 @@ body {
 
 .chart-wrapper canvas {
     max-height: 400px;
+}
+
+/* ========= Chart Warning ========= */
+.chart-warning {
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    color: #92400e;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.chart-warning::before {
+    content: "⚠";
+}
+
+/* Dark mode warning */
+[data-theme="dark"] .chart-warning {
+    background: #422006;
+    border-color: #92400e;
+    color: #fcd34d;
 }
 
 /* ========= Statistics Panel ========= */

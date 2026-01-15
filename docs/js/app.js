@@ -76,6 +76,7 @@ const elements = {
     chartStartDate: document.getElementById('chart-start-date'),
     chartEndDate: document.getElementById('chart-end-date'),
     resetDateRangeBtn: document.getElementById('reset-date-range-btn'),
+    chartWarning: document.getElementById('chart-warning'),
 
     // Study info
     studyTitle: document.getElementById('study-title'),
@@ -607,6 +608,9 @@ function toggleGroup(linkGroup) {
 
 async function selectStudy(studyId) {
     try {
+        // Check if we're switching from another study (to preserve settings)
+        const hadPreviousStudy = currentStudy !== null;
+
         currentStudy = studyIndex.getById(studyId);
         if (!currentStudy) throw new Error('Study not found');
 
@@ -619,13 +623,15 @@ async function selectStudy(studyId) {
             extractedPercentiles = await studyIndex.extractRadarPercentiles(studyId);
         }
 
-        // Set date range inputs based on study data
-        setDateRangeFromData();
+        // Set date range - preserve if switching between studies and ranges overlap
+        setDateRangeFromData(hadPreviousStudy);
 
         updateStudyInfo();
         updateChartTypeOptions();
-        updateChart();
-        updateStats();
+
+        // Re-filter data based on (potentially preserved) date range
+        // This also calls updateChart() and updateStats()
+        handleDateRangeChange();
 
         elements.chartPlaceholder.style.display = 'none';
         elements.chartContainer.style.display = 'flex';
@@ -686,7 +692,7 @@ function clearStudySelection() {
     collapseExpandedMarkers();
 }
 
-function setDateRangeFromData() {
+function setDateRangeFromData(preserveIfOverlaps = false) {
     if (!currentStudyData || currentStudyData.length === 0) return;
 
     const dates = currentStudyData
@@ -694,13 +700,28 @@ function setDateRangeFromData() {
         .filter(d => d)
         .sort((a, b) => a - b);
 
-    if (dates.length > 0) {
-        const minDate = dates[0];
-        const maxDate = dates[dates.length - 1];
+    if (dates.length === 0) return;
 
-        elements.chartStartDate.value = formatDateForInput(minDate);
-        elements.chartEndDate.value = formatDateForInput(maxDate);
+    const minDate = dates[0];
+    const maxDate = dates[dates.length - 1];
+
+    // If we should try to preserve and there's an existing range, check for overlap
+    if (preserveIfOverlaps && elements.chartStartDate.value && elements.chartEndDate.value) {
+        const currentStart = new Date(elements.chartStartDate.value + 'T00:00:00');
+        const currentEnd = new Date(elements.chartEndDate.value + 'T23:59:59');
+
+        // Check if current range overlaps with new study data range
+        const overlaps = currentStart <= maxDate && currentEnd >= minDate;
+
+        if (overlaps) {
+            // Keep existing range - no changes needed
+            return;
+        }
     }
+
+    // Reset to full study range
+    elements.chartStartDate.value = formatDateForInput(minDate);
+    elements.chartEndDate.value = formatDateForInput(maxDate);
 }
 
 function formatDateForInput(date) {
@@ -768,6 +789,12 @@ function updateChart() {
 
     const chartType = elements.chartTypeSelect.value;
     const timeAgg = elements.timeAggSelect.value;
+
+    // Show warning for 85th percentile chart on hourly view for Radar studies
+    const showWarning = chartType === 'avg-vs-85th' &&
+                        timeAgg === 'hourly' &&
+                        currentStudy.study_type === 'Radar';
+    elements.chartWarning.style.display = showWarning ? 'flex' : 'none';
 
     createChart(
         elements.chartCanvas,
@@ -1064,6 +1091,9 @@ async function selectStudyFromMap(studyId, skipZoom = false) {
     }
 
     try {
+        // Check if we're switching from another study (to preserve settings)
+        const hadPreviousStudy = currentStudy !== null;
+
         currentStudy = studyIndex.getById(studyId);
         if (!currentStudy) throw new Error('Study not found');
 
@@ -1076,13 +1106,15 @@ async function selectStudyFromMap(studyId, skipZoom = false) {
             extractedPercentiles = await studyIndex.extractRadarPercentiles(studyId);
         }
 
-        // Set date range inputs based on study data
-        setDateRangeFromData();
+        // Set date range - preserve if switching between studies and ranges overlap
+        setDateRangeFromData(hadPreviousStudy);
 
         updateStudyInfo();
         updateChartTypeOptions();
-        updateChart();
-        updateStats();
+
+        // Re-filter data based on (potentially preserved) date range
+        // This also calls updateChart() and updateStats()
+        handleDateRangeChange();
 
         elements.chartPlaceholder.style.display = 'none';
         elements.chartContainer.style.display = 'flex';

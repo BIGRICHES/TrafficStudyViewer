@@ -53,7 +53,12 @@
     <div id="app-screen" class="screen" style="display: none;">
         <!-- Header -->
         <header class="app-header">
-            <h1 class="app-title">Traffic Study Viewer</h1>
+            <div class="header-left">
+                <a href="#" class="header-logo" title="Utilities Hub">
+                    <img src="assets/logo.png" alt="Logo">
+                </a>
+                <h1 class="app-title">Traffic Study Viewer</h1>
+            </div>
             <div class="header-actions">
                 <button id="change-folder-btn" class="btn-square" title="Change data folder">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -168,6 +173,11 @@
                                     <input type="date" id="chart-end-date" class="control-input">
                                     <button id="reset-date-range-btn" class="btn btn-small" title="Reset to full range">Reset</button>
                                 </div>
+                            </div>
+
+                            <!-- Chart Warning -->
+                            <div id="chart-warning" class="chart-warning" style="display: none;">
+                                85th percentile stats might not be accurate at this time scale.
                             </div>
 
                             <!-- Chart Canvas -->
@@ -498,6 +508,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
     <!-- App Modules -->
-    <script type="module" src="js/app.js?v=19"></script>
+    <script type="module" src="js/app.js?v=20"></script>
 </body>
 </html>
