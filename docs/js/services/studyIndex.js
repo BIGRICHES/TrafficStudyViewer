@@ -135,7 +135,7 @@ export async function loadStudyData(studyId) {
         const csvContent = await fileSystem.readFile(filePath);
         console.log('[loadStudyData] File read success, content length:', csvContent?.length || 0);
 
-        const data = await parseCleanData(csvContent, study.study_type);
+        const data = await parseCleanData(csvContent, study.study_type, study.speed_limit);
         console.log('[loadStudyData] Parsed data rows:', data.length);
 
         // Cache the result

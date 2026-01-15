@@ -59,9 +59,10 @@ export async function parseStudyIndex(csvContent) {
  * Parse clean data CSV for a study
  * @param {string} csvContent - Raw CSV text
  * @param {string} studyType - Type of study
+ * @param {number} speedLimit - Speed limit for calculating violators (for per-vehicle data)
  * @returns {Promise<Array>} Array of data rows
  */
-export async function parseCleanData(csvContent, studyType) {
+export async function parseCleanData(csvContent, studyType, speedLimit = 0) {
     const result = await parseCSV(csvContent);
 
     // Debug: Log column names and first row
@@ -72,9 +73,18 @@ export async function parseCleanData(csvContent, studyType) {
         console.log('[parseCleanData] Total rows before filter:', result.data.length);
     } else {
         console.warn('[parseCleanData] No data rows found in CSV');
+        return [];
     }
 
-    // Process each row based on study type
+    const firstRow = result.data[0];
+    const isPerVehicleData = firstRow.speed !== undefined && firstRow.vehicles === undefined;
+
+    if (isPerVehicleData) {
+        console.log('[parseCleanData] Detected per-vehicle data, aggregating into intervals...');
+        return aggregatePerVehicleData(result.data, speedLimit);
+    }
+
+    // Process interval-aggregated data (Radar, JAMAR, etc.)
     const processedRows = result.data.map(row => {
         const rowData = {
             datetime: parseDateTime(row.datetime),
@@ -116,6 +126,72 @@ export async function parseCleanData(csvContent, studyType) {
     }
 
     return filtered;
+}
+
+/**
+ * Aggregate per-vehicle data into hourly intervals
+ * @param {Array} rawData - Per-vehicle data rows
+ * @param {number} speedLimit - Speed limit for determining violators
+ * @returns {Array} Aggregated interval data
+ */
+function aggregatePerVehicleData(rawData, speedLimit) {
+    const hourlyBuckets = new Map();
+
+    for (const row of rawData) {
+        const datetime = parseDateTime(row.datetime);
+        if (!datetime) continue;
+
+        const speed = parseFloat(row.speed) || 0;
+        if (speed <= 0) continue;
+
+        // Create hourly bucket key
+        const dt = new Date(datetime);
+        const hourKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}`;
+
+        if (!hourlyBuckets.has(hourKey)) {
+            hourlyBuckets.set(hourKey, {
+                datetime: new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours()),
+                speeds: [],
+                violatorCount: 0
+            });
+        }
+
+        const bucket = hourlyBuckets.get(hourKey);
+        bucket.speeds.push(speed);
+        if (speedLimit > 0 && speed > speedLimit) {
+            bucket.violatorCount++;
+        }
+    }
+
+    // Convert buckets to interval format
+    const intervals = [];
+    for (const [key, bucket] of hourlyBuckets) {
+        const vehicles = bucket.speeds.length;
+        const violators = bucket.violatorCount;
+        const avgSpeed = bucket.speeds.reduce((a, b) => a + b, 0) / vehicles;
+        const peakSpeed = Math.max(...bucket.speeds);
+
+        // Calculate 85th percentile
+        const sortedSpeeds = [...bucket.speeds].sort((a, b) => a - b);
+        const p85Index = Math.ceil(0.85 * sortedSpeeds.length) - 1;
+        const p85 = sortedSpeeds[Math.max(0, p85Index)];
+
+        intervals.push({
+            datetime: bucket.datetime,
+            vehicles,
+            violators,
+            avg_speed: avgSpeed,
+            peak_speed: peakSpeed,
+            pct_speeders: vehicles > 0 ? (violators / vehicles) * 100 : 0,
+            p85
+        });
+    }
+
+    // Sort by datetime
+    intervals.sort((a, b) => a.datetime - b.datetime);
+
+    console.log('[parseCleanData] Aggregated into', intervals.length, 'hourly intervals');
+    return intervals;
 }
 
 /**
