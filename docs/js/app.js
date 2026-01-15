@@ -976,10 +976,14 @@ function updateMapMarkers() {
             if (expandedLinkGroup !== markerData.linkGroup) {
                 expandedLinkGroup = markerData.linkGroup;
 
-                // Create individual markers at actual coordinates
+                // Calculate offset coordinates for overlapping studies
+                const offsetCoords = getOffsetCoordinates(markerData.studies);
+
+                // Create individual markers at coordinates (with offsets for overlapping ones)
                 markerData.studies.forEach((s) => {
                     const color = getMarkerColor(s.study_type);
                     const isSelected = s.study_id === currentStudy.study_id;
+                    const coords = offsetCoords.get(s.study_id);
                     const expandedIcon = L.divIcon({
                         className: 'expanded-marker',
                         html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isSelected ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isSelected ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
@@ -987,7 +991,7 @@ function updateMapMarkers() {
                         iconAnchor: [12, 12]
                     });
 
-                    const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                    const expandedMarker = L.marker([coords.lat, coords.lon], { icon: expandedIcon })
                         .addTo(map);
 
                     expandedMarker.on('click', (e) => {
@@ -1107,6 +1111,40 @@ function updateExpandedMarkerSelection(selectedStudyId) {
     });
 }
 
+// Calculate offset coordinates for studies with identical positions
+// Returns a Map of study_id -> { lat, lon } with offsets applied
+function getOffsetCoordinates(studies) {
+    const coords = new Map();
+    const OFFSET = 0.00015; // ~15 meters, enough to separate markers visually
+
+    // Group studies by their coordinate string
+    const coordGroups = new Map();
+    studies.forEach(s => {
+        const key = `${s.lat},${s.lon}`;
+        if (!coordGroups.has(key)) {
+            coordGroups.set(key, []);
+        }
+        coordGroups.get(key).push(s);
+    });
+
+    // Apply offsets to overlapping studies
+    coordGroups.forEach((group) => {
+        if (group.length === 1) {
+            // No overlap, use original coordinates
+            coords.set(group[0].study_id, { lat: group[0].lat, lon: group[0].lon });
+        } else {
+            // Multiple studies at same location - spread them horizontally
+            const halfWidth = (group.length - 1) * OFFSET / 2;
+            group.forEach((s, i) => {
+                const offsetLon = -halfWidth + (i * OFFSET);
+                coords.set(s.study_id, { lat: s.lat, lon: s.lon + offsetLon });
+            });
+        }
+    });
+
+    return coords;
+}
+
 function addLinkedMarker(studies) {
     let totalLat = 0, totalLon = 0;
     studies.forEach(s => { totalLat += s.lat; totalLon += s.lon; });
@@ -1141,10 +1179,14 @@ function addLinkedMarker(studies) {
         // Just pan to center - never change zoom
         map.panTo([centLat, centLon], { animate: true });
 
-        // Create individual markers at actual coordinates (no popups)
+        // Calculate offset coordinates for overlapping studies
+        const offsetCoords = getOffsetCoordinates(studies);
+
+        // Create individual markers at coordinates (with offsets for overlapping ones)
         studies.forEach((s, index) => {
             const color = getMarkerColor(s.study_type);
             const isFirstStudy = index === 0;
+            const coords = offsetCoords.get(s.study_id);
             const expandedIcon = L.divIcon({
                 className: 'expanded-marker',
                 html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isFirstStudy ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isFirstStudy ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
@@ -1152,7 +1194,7 @@ function addLinkedMarker(studies) {
                 iconAnchor: [12, 12]
             });
 
-            const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+            const expandedMarker = L.marker([coords.lat, coords.lon], { icon: expandedIcon })
                 .addTo(map);
 
             // Click on expanded marker selects that study (keeps group expanded)
@@ -1320,10 +1362,14 @@ function zoomToStudy(studyId) {
             const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
             map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17, animate: true });
 
-            // Create individual markers at actual coordinates (no popups)
+            // Calculate offset coordinates for overlapping studies
+            const offsetCoords = getOffsetCoordinates(markerData.studies);
+
+            // Create individual markers at coordinates (with offsets for overlapping ones)
             markerData.studies.forEach((s) => {
                 const color = getMarkerColor(s.study_type);
                 const isSelected = s.study_id === studyId;
+                const coords = offsetCoords.get(s.study_id);
                 const expandedIcon = L.divIcon({
                     className: 'expanded-marker',
                     html: `<div style="background:${color};border-radius:50%;width:24px;height:24px;border:2px solid white;box-shadow:${isSelected ? '0 0 0 3px #fff, 0 0 0 6px #5470C6' : '0 2px 5px rgba(0,0,0,0.3)'};transform:${isSelected ? 'scale(1.2)' : 'scale(1)'};transition:all 0.2s;"></div>`,
@@ -1331,7 +1377,7 @@ function zoomToStudy(studyId) {
                     iconAnchor: [12, 12]
                 });
 
-                const expandedMarker = L.marker([s.lat, s.lon], { icon: expandedIcon })
+                const expandedMarker = L.marker([coords.lat, coords.lon], { icon: expandedIcon })
                     .addTo(map);
 
                 // Click on expanded marker selects that study (keeps group expanded)
