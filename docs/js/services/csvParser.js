@@ -65,14 +65,7 @@ export async function parseStudyIndex(csvContent) {
 export async function parseCleanData(csvContent, studyType, speedLimit = 0) {
     const result = await parseCSV(csvContent);
 
-    // Debug: Log column names and first row
-    if (result.data.length > 0) {
-        console.log('[parseCleanData] Study type:', studyType);
-        console.log('[parseCleanData] Column names:', Object.keys(result.data[0]));
-        console.log('[parseCleanData] First row:', result.data[0]);
-        console.log('[parseCleanData] Total rows before filter:', result.data.length);
-    } else {
-        console.warn('[parseCleanData] No data rows found in CSV');
+    if (result.data.length === 0) {
         return [];
     }
 
@@ -80,7 +73,6 @@ export async function parseCleanData(csvContent, studyType, speedLimit = 0) {
     const isPerVehicleData = firstRow.speed !== undefined && firstRow.vehicles === undefined;
 
     if (isPerVehicleData) {
-        console.log('[parseCleanData] Detected per-vehicle data, aggregating into intervals...');
         return aggregatePerVehicleData(result.data, speedLimit);
     }
 
@@ -119,13 +111,7 @@ export async function parseCleanData(csvContent, studyType, speedLimit = 0) {
         return rowData;
     });
 
-    const filtered = processedRows.filter(row => row.datetime !== null);
-    console.log('[parseCleanData] Rows after datetime filter:', filtered.length);
-    if (filtered.length === 0 && processedRows.length > 0) {
-        console.warn('[parseCleanData] All rows filtered out! First processed row datetime:', processedRows[0]?.datetime);
-    }
-
-    return filtered;
+    return processedRows.filter(row => row.datetime !== null);
 }
 
 /**
@@ -190,7 +176,6 @@ function aggregatePerVehicleData(rawData, speedLimit) {
     // Sort by datetime
     intervals.sort((a, b) => a.datetime - b.datetime);
 
-    console.log('[parseCleanData] Aggregated into', intervals.length, 'hourly intervals');
     return intervals;
 }
 

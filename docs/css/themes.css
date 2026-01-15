@@ -64,7 +64,16 @@
 }
 
 /* ========= Dark Mode Leaflet Adjustments ========= */
-/* Note: Map tiles are NOT inverted - they display normally in dark mode */
+
+/* Invert map tiles for dark mode (negative effect) */
+[data-theme="dark"] .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg);
+}
+
+/* Don't invert satellite tiles */
+[data-theme="dark"] .leaflet-tile-pane.satellite-active {
+    filter: none;
+}
 
 [data-theme="dark"] .leaflet-control-zoom a {
     background: var(--bg-secondary);

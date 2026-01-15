@@ -605,10 +605,8 @@ function toggleGroup(linkGroup) {
 // ============ Study Selection ============
 
 async function selectStudy(studyId) {
-    console.log('[selectStudy] Called with studyId:', studyId);
     try {
         currentStudy = studyIndex.getById(studyId);
-        console.log('[selectStudy] Found study:', currentStudy?.study_type, currentStudy?.location);
         if (!currentStudy) throw new Error('Study not found');
 
         currentStudyData = await studyIndex.loadStudyData(studyId);
@@ -646,6 +644,43 @@ async function selectStudy(studyId) {
         console.error('Error loading study:', error);
         alert(`Error loading study: ${error.message}`);
     }
+}
+
+function clearStudySelection() {
+    if (!currentStudy) return;
+
+    currentStudy = null;
+    currentStudyData = null;
+    filteredStudyData = null;
+    extractedPercentiles = null;
+
+    // Reset UI
+    elements.chartContainer.style.display = 'none';
+    elements.chartPlaceholder.style.display = 'flex';
+    elements.generateReportBtn.disabled = true;
+
+    // Clear study info
+    elements.studyTitle.textContent = '';
+    elements.studyTypeBadge.textContent = '';
+    elements.studyTypeBadge.className = 'type-badge';
+    elements.studyCounterNumber.textContent = '';
+    elements.studyDirection.textContent = '';
+    elements.studyDates.textContent = '';
+    elements.studySpeedLimit.textContent = '';
+
+    // Clear date range inputs
+    elements.chartStartDate.value = '';
+    elements.chartEndDate.value = '';
+
+    // Update sidebar to remove selection highlight
+    updateStudyList();
+
+    // Clear marker selection on map
+    updateSingleMarkerSelection(null);
+    updateExpandedMarkerSelection(null);
+
+    // Collapse any expanded markers
+    collapseExpandedMarkers();
 }
 
 function setDateRangeFromData() {
@@ -838,17 +873,11 @@ function initMap() {
 
     markersLayer = L.layerGroup().addTo(map);
 
-    // Collapse expanded markers when clicking on map background
+    // Clear selection and collapse markers when clicking on map background
     map.on('click', (e) => {
-        // Check if clicked on a marker - if not, check if we should collapse
+        // Check if clicked on a marker - if not, clear selection
         if (!e.originalEvent.target.closest('.leaflet-marker-icon')) {
-            // Only collapse if selected study is NOT in the currently expanded group
-            const selectedInExpandedGroup = currentStudy && expandedLinkGroup &&
-                studyMarkers.get(currentStudy.study_id)?.linkGroup === expandedLinkGroup;
-
-            if (!selectedInExpandedGroup) {
-                collapseExpandedMarkers();
-            }
+            clearStudySelection();
         }
     });
 
@@ -861,12 +890,14 @@ function toggleSatelliteView() {
     isSatelliteView = !isSatelliteView;
 
     const button = document.querySelector('.satellite-control .satellite-toggle-btn');
+    const tilePane = map.getPane('tilePane');
     if (!button) return;
 
     if (isSatelliteView) {
         map.removeLayer(streetLayer);
         map.addLayer(satelliteLayer);
         button.classList.add('active');
+        if (tilePane) tilePane.classList.add('satellite-active');
         button.innerHTML = `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -879,6 +910,7 @@ function toggleSatelliteView() {
         map.removeLayer(satelliteLayer);
         map.addLayer(streetLayer);
         button.classList.remove('active');
+        if (tilePane) tilePane.classList.remove('satellite-active');
         button.innerHTML = `
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
