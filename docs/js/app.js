@@ -605,8 +605,10 @@ function toggleGroup(linkGroup) {
 // ============ Study Selection ============
 
 async function selectStudy(studyId) {
+    console.log('[selectStudy] Called with studyId:', studyId);
     try {
         currentStudy = studyIndex.getById(studyId);
+        console.log('[selectStudy] Found study:', currentStudy?.study_type, currentStudy?.location);
         if (!currentStudy) throw new Error('Study not found');
 
         currentStudyData = await studyIndex.loadStudyData(studyId);
@@ -1115,7 +1117,7 @@ function updateExpandedMarkerSelection(selectedStudyId) {
 // Returns a Map of study_id -> { lat, lon } with offsets applied
 function getOffsetCoordinates(studies) {
     const coords = new Map();
-    const OFFSET = 0.00015; // ~15 meters, enough to separate markers visually
+    const OFFSET = 0.0003; // ~30 meters, enough to separate markers visually
 
     // Group studies by their coordinate string
     const coordGroups = new Map();
@@ -1132,12 +1134,19 @@ function getOffsetCoordinates(studies) {
         if (group.length === 1) {
             // No overlap, use original coordinates
             coords.set(group[0].study_id, { lat: group[0].lat, lon: group[0].lon });
+        } else if (group.length === 2) {
+            // Two studies - spread horizontally (left and right)
+            coords.set(group[0].study_id, { lat: group[0].lat, lon: group[0].lon - OFFSET / 2 });
+            coords.set(group[1].study_id, { lat: group[1].lat, lon: group[1].lon + OFFSET / 2 });
         } else {
-            // Multiple studies at same location - spread them horizontally
-            const halfWidth = (group.length - 1) * OFFSET / 2;
+            // Three or more studies - arrange in a radial pattern
+            const centerLat = group[0].lat;
+            const centerLon = group[0].lon;
             group.forEach((s, i) => {
-                const offsetLon = -halfWidth + (i * OFFSET);
-                coords.set(s.study_id, { lat: s.lat, lon: s.lon + offsetLon });
+                const angle = (2 * Math.PI * i) / group.length - Math.PI / 2; // Start from top
+                const offsetLat = OFFSET * Math.sin(angle);
+                const offsetLon = OFFSET * Math.cos(angle);
+                coords.set(s.study_id, { lat: centerLat + offsetLat, lon: centerLon + offsetLon });
             });
         }
     });

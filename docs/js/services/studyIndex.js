@@ -113,24 +113,39 @@ export function getLinkedStudies(linkGroup) {
  * @returns {Promise<Array>}
  */
 export async function loadStudyData(studyId) {
+    console.log('[loadStudyData] Loading study:', studyId);
+
     // Check cache first
     if (studyDataCache.has(studyId)) {
+        console.log('[loadStudyData] Returning cached data');
         return studyDataCache.get(studyId);
     }
 
     const study = getById(studyId);
     if (!study) {
+        console.error('[loadStudyData] Study not found in index:', studyId);
         throw new Error(`Study not found: ${studyId}`);
     }
+    console.log('[loadStudyData] Study type:', study.study_type);
 
     const filePath = `clean/${studyId}_clean.csv`;
-    const csvContent = await fileSystem.readFile(filePath);
-    const data = await parseCleanData(csvContent, study.study_type);
+    console.log('[loadStudyData] Reading file:', filePath);
 
-    // Cache the result
-    studyDataCache.set(studyId, data);
+    try {
+        const csvContent = await fileSystem.readFile(filePath);
+        console.log('[loadStudyData] File read success, content length:', csvContent?.length || 0);
 
-    return data;
+        const data = await parseCleanData(csvContent, study.study_type);
+        console.log('[loadStudyData] Parsed data rows:', data.length);
+
+        // Cache the result
+        studyDataCache.set(studyId, data);
+
+        return data;
+    } catch (error) {
+        console.error('[loadStudyData] Error reading/parsing file:', error);
+        throw error;
+    }
 }
 
 /**

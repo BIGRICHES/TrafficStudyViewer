@@ -64,40 +64,58 @@ export async function parseStudyIndex(csvContent) {
 export async function parseCleanData(csvContent, studyType) {
     const result = await parseCSV(csvContent);
 
+    // Debug: Log column names and first row
+    if (result.data.length > 0) {
+        console.log('[parseCleanData] Study type:', studyType);
+        console.log('[parseCleanData] Column names:', Object.keys(result.data[0]));
+        console.log('[parseCleanData] First row:', result.data[0]);
+        console.log('[parseCleanData] Total rows before filter:', result.data.length);
+    } else {
+        console.warn('[parseCleanData] No data rows found in CSV');
+    }
+
     // Process each row based on study type
-    return result.data.map(row => {
-        const processed = {
+    const processedRows = result.data.map(row => {
+        const rowData = {
             datetime: parseDateTime(row.datetime),
             vehicles: parseInt(row.vehicles) || 0
         };
 
         // Speed study fields
         if (row.violators !== undefined) {
-            processed.violators = parseInt(row.violators) || 0;
+            rowData.violators = parseInt(row.violators) || 0;
         }
         if (row.avg_speed !== undefined) {
-            processed.avg_speed = parseFloat(row.avg_speed) || 0;
+            rowData.avg_speed = parseFloat(row.avg_speed) || 0;
         }
         if (row.peak_speed !== undefined) {
-            processed.peak_speed = parseFloat(row.peak_speed) || 0;
+            rowData.peak_speed = parseFloat(row.peak_speed) || 0;
         }
         if (row.pct_speeders !== undefined) {
-            processed.pct_speeders = parseFloat(row.pct_speeders) || 0;
+            rowData.pct_speeders = parseFloat(row.pct_speeders) || 0;
         }
         if (row.sum_avg_speeds !== undefined) {
-            processed.sum_avg_speeds = parseFloat(row.sum_avg_speeds) || 0;
+            rowData.sum_avg_speeds = parseFloat(row.sum_avg_speeds) || 0;
         }
         if (row.p85 !== undefined) {
-            processed.p85 = parseFloat(row.p85) || 0;
+            rowData.p85 = parseFloat(row.p85) || 0;
         }
 
         // Volume fields
         if (row.direction !== undefined) {
-            processed.direction = row.direction;
+            rowData.direction = row.direction;
         }
 
-        return processed;
-    }).filter(row => row.datetime !== null);
+        return rowData;
+    });
+
+    const filtered = processedRows.filter(row => row.datetime !== null);
+    console.log('[parseCleanData] Rows after datetime filter:', filtered.length);
+    if (filtered.length === 0 && processedRows.length > 0) {
+        console.warn('[parseCleanData] All rows filtered out! First processed row datetime:', processedRows[0]?.datetime);
+    }
+
+    return filtered;
 }
 
 /**
