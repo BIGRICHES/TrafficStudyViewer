@@ -35,6 +35,7 @@ let isSatelliteView = false;
 let studyMarkers = new Map(); // Map study_id to marker for zooming
 let expandedLinkGroup = null; // Currently expanded linked group markers
 let expandedMarkers = []; // Temporary markers for expanded linked studies
+let skipMapFitBounds = false; // Flag to prevent fitBounds when clearing selection
 let isDarkTheme = false;
 let expandedGroups = new Set();
 
@@ -672,8 +673,10 @@ function clearStudySelection() {
     elements.chartStartDate.value = '';
     elements.chartEndDate.value = '';
 
-    // Update sidebar to remove selection highlight
+    // Update sidebar to remove selection highlight (skip map zoom)
+    skipMapFitBounds = true;
     updateStudyList();
+    skipMapFitBounds = false;
 
     // Clear marker selection on map
     updateSingleMarkerSelection(null);
@@ -994,7 +997,8 @@ function updateMapMarkers() {
     });
 
     // Only fit bounds on initial load (when no study is selected), never after
-    if (studies.length > 0 && !currentStudy) {
+    // Skip if clearing selection (skipMapFitBounds flag)
+    if (studies.length > 0 && !currentStudy && !skipMapFitBounds) {
         const bounds = L.latLngBounds(studies.map(s => [s.lat, s.lon]));
         map.fitBounds(bounds, { padding: [50, 50] });
     }
@@ -1217,8 +1221,8 @@ function addLinkedMarker(studies) {
         // Hide the combined marker
         marker.setOpacity(0);
 
-        // Just pan to center - never change zoom
-        map.panTo([centLat, centLon], { animate: true });
+        // Zoom in close to the linked studies
+        map.flyTo([centLat, centLon], 17, { animate: true });
 
         // Calculate offset coordinates for overlapping studies
         const offsetCoords = getOffsetCoordinates(studies);
