@@ -595,6 +595,8 @@ function toggleGroup(linkGroup) {
     if (expandedGroups.has(linkGroup)) {
         expandedGroups.delete(linkGroup);
     } else {
+        // Accordion behavior: collapse all other groups when expanding a new one
+        expandedGroups.clear();
         expandedGroups.add(linkGroup);
     }
     updateStudyList();
@@ -631,7 +633,11 @@ async function selectStudy(studyId) {
         updateStudyList();
         updateReportPanel();
 
-        // Zoom to study on map
+        // When selecting from sidebar, collapse any expanded map markers first
+        // This ensures the previously expanded group returns to its combined marker
+        forceCollapseExpandedMarkers();
+
+        // Zoom to study on map (may expand new linked group)
         zoomToStudy(studyId);
 
     } catch (error) {
@@ -1201,6 +1207,29 @@ function collapseExpandedMarkers() {
     expandedLinkGroup = null;
 }
 
+// Force collapse expanded markers and always restore combined marker
+// Used when selecting from sidebar to ensure clean state before zooming
+function forceCollapseExpandedMarkers() {
+    if (expandedMarkers.length === 0) return;
+
+    // Remove expanded markers from map
+    expandedMarkers.forEach(({ marker }) => {
+        map.removeLayer(marker);
+    });
+    expandedMarkers = [];
+
+    // Always restore the combined marker
+    if (expandedLinkGroup) {
+        studyMarkers.forEach((value) => {
+            if (value.linkGroup === expandedLinkGroup && value.marker) {
+                value.marker.setOpacity(1);
+            }
+        });
+    }
+
+    expandedLinkGroup = null;
+}
+
 // Check if link marker should be shown (only if no study in that group is selected)
 function shouldShowLinkMarker(linkGroup) {
     if (!currentStudy) return true;
@@ -1287,19 +1316,9 @@ function zoomToStudy(studyId) {
             // Hide the combined marker
             markerData.marker.setOpacity(0);
 
-            // Calculate bounds for all studies in group
+            // Calculate bounds for all studies in group and zoom to fit all markers
             const bounds = L.latLngBounds(markerData.studies.map(s => [s.lat, s.lon]));
-            const currentZoom = map.getZoom();
-
-            // Fit bounds but only zoom IN, never out
             map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17, animate: true });
-
-            // After fitBounds, check if it zoomed out and restore if so
-            setTimeout(() => {
-                if (map.getZoom() < currentZoom) {
-                    map.setZoom(currentZoom, { animate: false });
-                }
-            }, 50);
 
             // Create individual markers at actual coordinates (no popups)
             markerData.studies.forEach((s) => {
@@ -1335,9 +1354,9 @@ function zoomToStudy(studyId) {
             updateExpandedMarkerSelection(studyId);
         }
     } else {
-        // Single study - just pan to location, never change zoom
+        // Single study - zoom to location with reasonable zoom level
         collapseExpandedMarkers();
-        map.panTo([study.lat, study.lon], { animate: true });
+        map.flyTo([study.lat, study.lon], 17, { animate: true });
 
         // Update single marker selection visual
         updateSingleMarkerSelection(studyId);

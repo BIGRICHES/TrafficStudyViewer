@@ -64,9 +64,7 @@
 }
 
 /* ========= Dark Mode Leaflet Adjustments ========= */
-[data-theme="dark"] .leaflet-tile-pane {
-    filter: invert(1) hue-rotate(180deg) brightness(0.85);
-}
+/* Note: Map tiles are NOT inverted - they display normally in dark mode */
 
 [data-theme="dark"] .leaflet-control-zoom a {
     background: var(--bg-secondary);
@@ -89,6 +87,25 @@
 
 [data-theme="dark"] .popup-info {
     color: var(--text-secondary);
+}
+
+/* Satellite toggle button dark mode */
+[data-theme="dark"] .satellite-control .satellite-toggle-btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .satellite-control {
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .satellite-control .satellite-toggle-btn:hover {
+    background: var(--bg-hover);
+}
+
+[data-theme="dark"] .satellite-control .satellite-toggle-btn.active {
+    background: var(--accent-primary);
+    color: white;
 }
 
 /* ========= Dark Mode Chart.js Adjustments ========= */
