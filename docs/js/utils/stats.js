@@ -55,10 +55,19 @@ export function max(values) {
 export function aggregateDaily(data, extractedPercentiles = null) {
     const grouped = new Map();
 
+    // Track min and max dates to fill gaps
+    let minDate = null;
+    let maxDate = null;
+
     for (const row of data) {
         if (!row.datetime) continue;
 
         const key = getDateKey(row.datetime);
+        const dt = new Date(row.datetime);
+
+        // Track date range
+        if (!minDate || dt < minDate) minDate = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+        if (!maxDate || dt > maxDate) maxDate = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
 
         if (!grouped.has(key)) {
             grouped.set(key, {
@@ -92,6 +101,27 @@ export function aggregateDaily(data, extractedPercentiles = null) {
         }
     }
 
+    // Fill in missing days between min and max
+    if (minDate && maxDate) {
+        const current = new Date(minDate);
+        while (current <= maxDate) {
+            const key = getDateKey(current);
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    date: key,
+                    label: formatChartDate(current),
+                    vehicles: 0,
+                    violators: 0,
+                    sum_speeds: 0,
+                    peak_speed: 0,
+                    speeds: [],
+                    p85_values: []
+                });
+            }
+            current.setDate(current.getDate() + 1);
+        }
+    }
+
     // Calculate derived values
     const results = [];
     for (const agg of grouped.values()) {
@@ -117,9 +147,9 @@ export function aggregateDaily(data, extractedPercentiles = null) {
             vehicles: agg.vehicles,
             violators: agg.violators,
             non_speeders: agg.vehicles - agg.violators,
-            pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : 0,
-            avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : 0,
-            peak_speed: agg.peak_speed,
+            pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : null,
+            avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : null,
+            peak_speed: agg.peak_speed || null,
             p85: p85Value
         });
     }
@@ -139,6 +169,17 @@ export function aggregateDaily(data, extractedPercentiles = null) {
 export function aggregateHourly(data, extractedPercentiles = null) {
     const grouped = new Map();
 
+    // Track min and max datetime to fill gaps
+    let minDatetime = null;
+    let maxDatetime = null;
+
+    // Helper to create label for an hour
+    const createLabel = (dt, hour) => {
+        const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+        const ampm = hour < 12 ? 'AM' : 'PM';
+        return [`${dt.getMonth() + 1}/${dt.getDate()} ${hour12}`, ampm];
+    };
+
     for (const row of data) {
         if (!row.datetime) continue;
 
@@ -148,10 +189,15 @@ export function aggregateHourly(data, extractedPercentiles = null) {
         const hour = dt.getHours();
         const key = `${dateStr}-${String(hour).padStart(2, '0')}`;
 
+        // Track datetime range (at hour precision)
+        const hourDatetime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), hour);
+        if (!minDatetime || hourDatetime < minDatetime) minDatetime = hourDatetime;
+        if (!maxDatetime || hourDatetime > maxDatetime) maxDatetime = hourDatetime;
+
         if (!grouped.has(key)) {
             grouped.set(key, {
-                datetime: new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), hour),
-                label: `${dt.getMonth() + 1}/${dt.getDate()} ${formatHour(hour)}`,
+                datetime: hourDatetime,
+                label: createLabel(dt, hour),
                 vehicles: 0,
                 violators: 0,
                 sum_speeds: 0,
@@ -178,6 +224,31 @@ export function aggregateHourly(data, extractedPercentiles = null) {
 
         if (row.p85 && row.p85 > 0) {
             agg.p85_values.push(row.p85);
+        }
+    }
+
+    // Fill in missing hours between min and max
+    if (minDatetime && maxDatetime) {
+        const current = new Date(minDatetime);
+        while (current <= maxDatetime) {
+            const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+            const hour = current.getHours();
+            const key = `${dateStr}-${String(hour).padStart(2, '0')}`;
+
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    datetime: new Date(current),
+                    label: createLabel(current, hour),
+                    vehicles: 0,
+                    violators: 0,
+                    sum_speeds: 0,
+                    peak_speed: 0,
+                    count: 0,
+                    speeds: [],
+                    p85_values: []
+                });
+            }
+            current.setHours(current.getHours() + 1);
         }
     }
 
@@ -215,9 +286,9 @@ export function aggregateHourly(data, extractedPercentiles = null) {
             vehicles: agg.vehicles,
             violators: agg.violators,
             non_speeders: agg.vehicles - agg.violators,
-            pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : 0,
-            avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : 0,
-            peak_speed: agg.peak_speed,
+            pct_speeders: agg.vehicles > 0 ? (agg.violators / agg.vehicles) * 100 : null,
+            avg_speed: agg.vehicles > 0 ? agg.sum_speeds / agg.vehicles : null,
+            peak_speed: agg.peak_speed || null,
             p85: p85Value
         });
     }

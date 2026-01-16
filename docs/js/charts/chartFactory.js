@@ -45,13 +45,13 @@ function getChartConfig(chartType, data, options = {}) {
                     datasets: [
                         {
                             label: 'Law-Abiding',
-                            data: data.map(d => Math.round(d.non_speeders || 0)),
+                            data: data.map(d => d.vehicles > 0 ? Math.round(d.non_speeders || 0) : null),
                             backgroundColor: CHART_COLORS.lawAbiding,
                             borderRadius: 4
                         },
                         {
                             label: 'Violators',
-                            data: data.map(d => Math.round(d.violators || 0)),
+                            data: data.map(d => d.vehicles > 0 ? Math.round(d.violators || 0) : null),
                             backgroundColor: CHART_COLORS.violators,
                             borderRadius: 4
                         }
@@ -89,7 +89,8 @@ function getChartConfig(chartType, data, options = {}) {
                             borderColor: CHART_COLORS.violators,
                             backgroundColor: CHART_COLORS.violators + '40',
                             fill: false,
-                            tension: 0.3
+                            tension: 0.3,
+                            spanGaps: false
                         }
                     ]
                 },
@@ -119,19 +120,21 @@ function getChartConfig(chartType, data, options = {}) {
             const datasets = [
                 {
                     label: 'Average Speed',
-                    data: data.map(d => Math.round(d.avg_speed || 0)),
+                    data: data.map(d => d.avg_speed ? Math.round(d.avg_speed) : null),
                     borderColor: CHART_COLORS.avgSpeed,
                     backgroundColor: CHART_COLORS.avgSpeed + '40',
                     fill: false,
-                    tension: 0.3
+                    tension: 0.3,
+                    spanGaps: false
                 },
                 {
                     label: 'Peak Speed',
-                    data: data.map(d => Math.round(d.peak_speed || 0)),
+                    data: data.map(d => d.peak_speed ? Math.round(d.peak_speed) : null),
                     borderColor: CHART_COLORS.peakSpeed,
                     backgroundColor: CHART_COLORS.peakSpeed + '40',
                     fill: false,
-                    tension: 0.3
+                    tension: 0.3,
+                    spanGaps: false
                 }
             ];
 
@@ -188,7 +191,7 @@ function getChartConfig(chartType, data, options = {}) {
             const avgVs85thDatasets = [
                 {
                     label: 'Average Speed',
-                    data: data.map(d => Math.round(d.avg_speed || 0)),
+                    data: data.map(d => d.avg_speed ? Math.round(d.avg_speed) : null),
                     backgroundColor: CHART_COLORS.avgSpeed,
                     borderRadius: 4
                 }
@@ -199,7 +202,7 @@ function getChartConfig(chartType, data, options = {}) {
             if (has85th) {
                 avgVs85thDatasets.push({
                     label: '85th Percentile',
-                    data: data.map(d => Math.round(d.p85 || 0)),
+                    data: data.map(d => d.p85 ? Math.round(d.p85) : null),
                     backgroundColor: CHART_COLORS.percentile85,
                     borderRadius: 4
                 });
@@ -248,7 +251,7 @@ function getChartConfig(chartType, data, options = {}) {
                     datasets: [
                         {
                             label: 'Vehicles',
-                            data: data.map(d => Math.round(d.vehicles || 0)),
+                            data: data.map(d => d.vehicles > 0 ? Math.round(d.vehicles) : null),
                             backgroundColor: CHART_COLORS.volume,
                             borderRadius: 4
                         }
