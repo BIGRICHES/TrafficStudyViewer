@@ -169,15 +169,15 @@ export function aggregateDaily(data, extractedPercentiles = null) {
 export function aggregateHourly(data, extractedPercentiles = null) {
     const grouped = new Map();
 
-    // Track min and max datetime to fill gaps
-    let minDatetime = null;
-    let maxDatetime = null;
+    // Track min and max dates (not hours) to fill all 24 hours per day
+    let minDate = null;
+    let maxDate = null;
 
-    // Helper to create label for an hour
+    // Helper to create label for an hour (date on line 1, time on line 2)
     const createLabel = (dt, hour) => {
         const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
         const ampm = hour < 12 ? 'AM' : 'PM';
-        return [`${dt.getMonth() + 1}/${dt.getDate()} ${hour12}`, ampm];
+        return [`${dt.getMonth() + 1}/${dt.getDate()}`, `${hour12} ${ampm}`];
     };
 
     for (const row of data) {
@@ -189,14 +189,14 @@ export function aggregateHourly(data, extractedPercentiles = null) {
         const hour = dt.getHours();
         const key = `${dateStr}-${String(hour).padStart(2, '0')}`;
 
-        // Track datetime range (at hour precision)
-        const hourDatetime = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), hour);
-        if (!minDatetime || hourDatetime < minDatetime) minDatetime = hourDatetime;
-        if (!maxDatetime || hourDatetime > maxDatetime) maxDatetime = hourDatetime;
+        // Track date range (at day precision, not hour)
+        const dayDate = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+        if (!minDate || dayDate < minDate) minDate = dayDate;
+        if (!maxDate || dayDate > maxDate) maxDate = dayDate;
 
         if (!grouped.has(key)) {
             grouped.set(key, {
-                datetime: hourDatetime,
+                datetime: new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), hour),
                 label: createLabel(dt, hour),
                 vehicles: 0,
                 violators: 0,
@@ -227,28 +227,31 @@ export function aggregateHourly(data, extractedPercentiles = null) {
         }
     }
 
-    // Fill in missing hours between min and max
-    if (minDatetime && maxDatetime) {
-        const current = new Date(minDatetime);
-        while (current <= maxDatetime) {
-            const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
-            const hour = current.getHours();
-            const key = `${dateStr}-${String(hour).padStart(2, '0')}`;
+    // Fill in ALL 24 hours for each day from minDate to maxDate
+    if (minDate && maxDate) {
+        const currentDay = new Date(minDate);
+        while (currentDay <= maxDate) {
+            // Fill all 24 hours for this day
+            for (let hour = 0; hour < 24; hour++) {
+                const dateStr = `${currentDay.getFullYear()}-${String(currentDay.getMonth() + 1).padStart(2, '0')}-${String(currentDay.getDate()).padStart(2, '0')}`;
+                const key = `${dateStr}-${String(hour).padStart(2, '0')}`;
 
-            if (!grouped.has(key)) {
-                grouped.set(key, {
-                    datetime: new Date(current),
-                    label: createLabel(current, hour),
-                    vehicles: 0,
-                    violators: 0,
-                    sum_speeds: 0,
-                    peak_speed: 0,
-                    count: 0,
-                    speeds: [],
-                    p85_values: []
-                });
+                if (!grouped.has(key)) {
+                    const hourDatetime = new Date(currentDay.getFullYear(), currentDay.getMonth(), currentDay.getDate(), hour);
+                    grouped.set(key, {
+                        datetime: hourDatetime,
+                        label: createLabel(hourDatetime, hour),
+                        vehicles: 0,
+                        violators: 0,
+                        sum_speeds: 0,
+                        peak_speed: 0,
+                        count: 0,
+                        speeds: [],
+                        p85_values: []
+                    });
+                }
             }
-            current.setHours(current.getHours() + 1);
+            currentDay.setDate(currentDay.getDate() + 1);
         }
     }
 
