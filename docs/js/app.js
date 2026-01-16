@@ -124,7 +124,6 @@ const elements = {
     chartModalEndDate: document.getElementById('chart-modal-end-date'),
     chartModalEndTime: document.getElementById('chart-modal-end-time'),
     chartModalShowLabels: document.getElementById('chart-modal-show-labels'),
-    chartModalEachDay: document.getElementById('chart-modal-each-day'),
 
     // Presets
     presetSelect: document.getElementById('preset-select'),
@@ -1612,7 +1611,6 @@ window.openEditChartModal = function(index) {
     elements.chartModalEndDate.value = item.endDate || '';
     elements.chartModalEndTime.value = item.endTime || '23:59';
     elements.chartModalShowLabels.checked = item.showLabels;
-    elements.chartModalEachDay.checked = item.eachDay || false;
 
     elements.chartModal.style.display = 'flex';
 }
@@ -1636,7 +1634,6 @@ function resetChartModal() {
     elements.chartModalEndDate.value = '';
     elements.chartModalEndTime.value = '23:59';
     elements.chartModalShowLabels.checked = true;
-    elements.chartModalEachDay.checked = false;
 }
 
 function toggleDateRange() {
@@ -1718,7 +1715,7 @@ function saveChartItem() {
         endDate: elements.chartModalEndDate.value,
         endTime: elements.chartModalEndTime.value,
         showLabels: elements.chartModalShowLabels.checked,
-        eachDay: elements.chartModalEachDay.checked
+        eachDay: false // Only set via JSON preset editing
     };
 
     if (editingItemIndex >= 0) {
@@ -2215,7 +2212,9 @@ async function generateReport() {
             chartY = 40;
         }
 
-        // Process chart items
+        // Process chart items - track study changes for section headers
+        let currentStudyId = chartItems.length > 0 ? chartItems[0].studyId : null;
+
         for (let i = 0; i < chartItems.length; i++) {
             const item = chartItems[i];
             elements.reportStatus.textContent = `Generating chart ${i + 1} of ${chartItems.length}...`;
@@ -2245,19 +2244,53 @@ async function generateReport() {
             const chartHeight = chartsPerPage === 1 ? 180 : 100;
             const chartSpacing = chartsPerPage === 1 ? 190 : 115;
 
-            // Check if need new page
-            if (chartsOnPage >= chartsPerPage) {
+            // Check if study changed - start new section with full header
+            const studyChanged = i > 0 && item.studyId !== currentStudyId;
+            if (studyChanged) {
+                currentStudyId = item.studyId;
+
+                // Calculate stats for this study
+                const studyStats = pdfGen.calculateReportStatistics(filteredData, itemPercentiles);
+
+                // Format date range for this study
+                let studyDateRange = '';
+                if (item.studyMeta?.start_datetime && item.studyMeta?.end_datetime) {
+                    const startDate = new Date(item.studyMeta.start_datetime);
+                    const endDate = new Date(item.studyMeta.end_datetime);
+                    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                        studyDateRange = `${startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+                    }
+                }
+
+                // New page with full study header
                 doc.addPage();
                 chartsOnPage = 0;
 
-                // Continuation header - use dynamic Y position
+                const headerEndY = pdfGen.drawHeader(doc, {
+                    logoDataUrl,
+                    location: item.studyMeta?.location,
+                    direction: item.studyMeta?.direction,
+                    dateRange: studyDateRange,
+                    counter: item.studyMeta?.counter_number,
+                    speedLimit: item.studyMeta?.speed_limit,
+                    stats: studyStats,
+                    isFirstPage: true
+                });
+                chartY = headerEndY + 12;
+            }
+            // Check if need new page (same study, page full)
+            else if (chartsOnPage >= chartsPerPage) {
+                doc.addPage();
+                chartsOnPage = 0;
+
+                // Continuation header
                 const headerEndY = pdfGen.drawHeader(doc, {
                     logoDataUrl,
                     location: item.studyMeta?.location,
                     direction: item.studyMeta?.direction,
                     isContinuation: true
                 });
-                chartY = headerEndY + 12; // Add spacing for chart title
+                chartY = headerEndY + 12;
             }
 
             // Build chart title

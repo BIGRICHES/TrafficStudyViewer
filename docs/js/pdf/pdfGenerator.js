@@ -119,12 +119,12 @@ export function drawHeader(doc, options = {}) {
 
         return 34; // Return Y position after header
     } else {
-        // Continuation page - just separator
+        // Continuation page - separator below logo (consistent spacing with first page)
         doc.setDrawColor(170, 170, 170);
         doc.setLineWidth(0.4);
-        doc.line(leftMargin, 18, pageWidth - leftMargin, 18);
+        doc.line(leftMargin, 30, pageWidth - leftMargin, 30);
 
-        return 22;
+        return 34; // Same Y position as first page for consistent chart placement
     }
 }
 
